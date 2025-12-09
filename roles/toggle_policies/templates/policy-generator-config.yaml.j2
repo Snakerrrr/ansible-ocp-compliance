@@ -20,12 +20,12 @@ policies:
       - path: compliance-operator/install
 
   - name: run-cis-scan
-    disabled: {{ (not run_cis) | lower }}
+    disabled: "{{ (not (run_cis | bool)) | string | lower }}"
     manifests:
       - path: compliance-operator/profiles/cis
 
   - name: run-pci-scan
-    disabled: {{ (not run_pci) | lower }}
+    disabled: "{{ (not (run_pci | bool)) | string | lower }}"
     manifests:
       - path: compliance-operator/profiles/pci
 
