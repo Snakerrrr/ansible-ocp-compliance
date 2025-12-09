@@ -1,0 +1,63 @@
+---
+- name: Toggle CIS/PCI compliance policies via GitOps
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    # 👉 Repo 1: el GitOps que ya tienes con las policies
+    gitops_repo_url: "https://github.com/Snakerrrr/acm-policies.git"
+    gitops_repo_branch: "main"
+    gitops_repo_path: "/tmp/acm-policies"
+
+    # Estos se pueden sobreescribir con -e o desde AAP
+    run_cis: true
+    run_pci: false
+    remediation_action: "inform"
+
+  tasks:
+    - name: Clonar/actualizar repo GitOps (acm-policies)
+      ansible.builtin.git:
+        repo: "{{ gitops_repo_url }}"
+        dest: "{{ gitops_repo_path }}"
+        version: "{{ gitops_repo_branch }}"
+        force: true
+
+    - name: Aplicar cambios a policy-generator-config.yaml
+      include_role:
+        name: toggle_policies
+      vars:
+        gitops_repo_path: "{{ gitops_repo_path }}"
+        run_cis: "{{ run_cis }}"
+        run_pci: "{{ run_pci }}"
+        remediation_action: "{{ remediation_action }}"
+
+    - name: Verificar si hay cambios pendientes de commit
+      command: git status --porcelain
+      args:
+        chdir: "{{ gitops_repo_path }}"
+      register: git_status
+      changed_when: false
+
+    - name: Hacer commit y push si hay cambios
+      when: git_status.stdout != ""
+      block:
+        - name: Configurar usuario Git para el commit
+          command: git config user.name "ansible-bot"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+
+        - name: Configurar email Git para el commit
+          command: git config user.email "ansible-bot@example.com"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+
+        - name: Hacer commit
+          command: git commit -am "Update compliance policies (CIS={{ run_cis }}, PCI={{ run_pci }}, remediation={{ remediation_action }})"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+
+        - name: Hacer push
+          command: git push origin "{{ gitops_repo_branch }}"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+

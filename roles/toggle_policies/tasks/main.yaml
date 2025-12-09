@@ -1,0 +1,9 @@
+- name: Renderizar policy-generator-config.yaml desde plantilla
+  template:
+    src: policy-generator-config.yaml.j2
+    dest: "{{ gitops_repo_path }}/base/policy-generator-config.yaml"
+  vars:
+    run_cis: "{{ run_cis | default(true) }}"
+    run_pci: "{{ run_pci | default(false) }}"
+    remediation_action: "{{ remediation_action | default('inform') }}"
+
