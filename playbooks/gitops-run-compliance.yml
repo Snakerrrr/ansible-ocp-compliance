@@ -1,15 +1,66 @@
-- name: Healthcheck + Toggle Compliance via GitOps
+- name: Healthcheck (informativo) + Toggle Compliance via GitOps
   hosts: localhost
   gather_facts: false
 
   vars:
-    remediation_action: "inform"   # por defecto informativo
+    # Defaults (puedes sobreescribir por -e)
+    github_token: ""
+    gitops_repo_url: "https://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@github.com/Snakerrrr/acm-policies.git"
+    gitops_repo_branch: "main"
+    gitops_repo_path: "/tmp/acm-policies"
+
+    # En esta fase: healthcheck informativo + ejecutar ambos estándares
+    run_cis: true
+    run_pci: true
+    remediation_action: "inform"
 
   tasks:
     - name: Ejecutar healthcheck (solo informativo)
       include_role:
         name: ocp_healthcheck
 
-    - name: Ejecutar toggle GitOps (siempre CIS+PCI en esta fase)
-      import_playbook: gitops-toggle-compliance.yml
+    - name: Clonar/actualizar repo GitOps (acm-policies)
+      ansible.builtin.git:
+        repo: "{{ gitops_repo_url }}"
+        dest: "{{ gitops_repo_path }}"
+        version: "{{ gitops_repo_branch }}"
+        force: true
+
+    - name: Aplicar cambios a policy-generator-config.yaml
+      include_role:
+        name: toggle_policies
+      vars:
+        run_cis: "{{ run_cis }}"
+        run_pci: "{{ run_pci }}"
+        remediation_action: "{{ remediation_action }}"
+
+    - name: Verificar si hay cambios pendientes de commit
+      command: git status --porcelain
+      args:
+        chdir: "{{ gitops_repo_path }}"
+      register: git_status
+      changed_when: false
+
+    - name: Hacer commit y push si hay cambios
+      when: git_status.stdout != ""
+      block:
+        - name: Configurar usuario Git para el commit
+          command: git config user.name "ansible-bot"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+
+        - name: Configurar email Git para el commit
+          command: git config user.email "ansible-bot@example.com"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+
+        - name: Hacer commit
+          command: git commit -am "Healthcheck+Compliance (CIS={{ run_cis }}, PCI={{ run_pci }}, remediation={{ remediation_action }})"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+
+        - name: Hacer push
+          command: git push origin "{{ gitops_repo_branch }}"
+          args:
+            chdir: "{{ gitops_repo_path }}"
 
