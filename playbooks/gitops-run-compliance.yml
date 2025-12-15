@@ -1,0 +1,15 @@
+- name: Healthcheck + Toggle Compliance via GitOps
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    remediation_action: "inform"   # por defecto informativo
+
+  tasks:
+    - name: Ejecutar healthcheck (solo informativo)
+      include_role:
+        name: ocp_healthcheck
+
+    - name: Ejecutar toggle GitOps (siempre CIS+PCI en esta fase)
+      import_playbook: gitops-toggle-compliance.yml
+
