@@ -1,4 +1,9 @@
 ---
+- name: Defaults internos (evita vars undefined y loops)
+  set_fact:
+    _scan_remediation_action: "{{ _scan_remediation_action | default('inform') }}"
+    _install_operator_remediation_action: "{{ _install_operator_remediation_action | default('enforce') }}"
+
 - name: Validar que el repo GitOps existe
   stat:
     path: "{{ gitops_repo_path }}/base/policy-generator-config.yaml"

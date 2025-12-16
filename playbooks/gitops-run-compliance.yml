@@ -51,8 +51,8 @@
       vars:
         run_cis: "{{ run_cis }}"
         run_pci: "{{ run_pci }}"
-        scan_remediation_action: "{{ remediation_action }}"
-        install_operator_remediation_action: "{{ install_operator_remediation_action }}"
+        _scan_remediation_action: "{{ remediation_action  | default('inform') }}"
+        _install_operator_remediation_action: "enforce"
 
     # -------------------------------------------------
     # Verificar cambios Git
