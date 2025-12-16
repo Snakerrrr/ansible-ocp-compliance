@@ -15,9 +15,9 @@
     remediation_action: "inform"
 
   tasks:
-    - name: Ejecutar healthcheck (solo informativo)
-      include_role:
-        name: ocp_healthcheck
+   # - name: Ejecutar healthcheck (solo informativo)
+   #   include_role:
+   #     name: ocp_healthcheck
 
     - name: Clonar/actualizar repo GitOps (acm-policies)
       ansible.builtin.git:
@@ -30,9 +30,10 @@
       include_role:
         name: toggle_policies
       vars:
-        run_cis: "{{ run_cis }}"
-        run_pci: "{{ run_pci }}"
-        remediation_action: "{{ remediation_action }}"
+        run_cis: true
+        run_pci: true
+        scan_remediation_action: "{{ remediation_action | default('inform') }}"
+        install_operator_remediation_action: "enforce"
 
     - name: Verificar si hay cambios pendientes de commit
       command: git status --porcelain

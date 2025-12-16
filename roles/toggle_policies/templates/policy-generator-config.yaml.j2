@@ -2,9 +2,10 @@ apiVersion: policy.open-cluster-management.io/v1
 kind: PolicyGenerator
 metadata:
   name: compliance-operator-policies
+
 policyDefaults:
   namespace: policies
-  remediationAction: {{ remediation_action | default("inform") }}
+  remediationAction: {{ scan_remediation_action | default('inform') }}
   placement:
     labelSelector:
       matchExpressions:
@@ -16,16 +17,17 @@ policyDefaults:
 policies:
   - name: install-compliance-operator
     disabled: false
+    remediationAction: {{ install_operator_remediation_action | default('enforce') }}
     manifests:
       - path: compliance-operator/install
 
   - name: run-cis-scan
-    disabled: "{{ (not (run_cis | bool)) | string | lower }}"
+    disabled: {{ (not run_cis) | ternary('true','false') }}
     manifests:
       - path: compliance-operator/profiles/cis
 
   - name: run-pci-scan
-    disabled: "{{ (not (run_pci | bool)) | string | lower }}"
+    disabled: {{ (not run_pci) | ternary('true','false') }}
     manifests:
       - path: compliance-operator/profiles/pci
 

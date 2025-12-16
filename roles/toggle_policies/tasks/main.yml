@@ -1,0 +1,17 @@
+---
+- name: Validar que el repo GitOps existe
+  stat:
+    path: "{{ gitops_repo_path }}/base/policy-generator-config.yaml"
+  register: policy_file
+
+- name: Fallar si no existe policy-generator-config.yaml
+  fail:
+    msg: "No se encontró base/policy-generator-config.yaml en el repo GitOps"
+  when: not policy_file.stat.exists
+
+- name: Renderizar policy-generator-config.yaml desde template
+  template:
+    src: policy-generator-config.yaml.j2
+    dest: "{{ gitops_repo_path }}/base/policy-generator-config.yaml"
+    mode: '0644'
+
