@@ -22,12 +22,13 @@ policies:
       - path: compliance-operator/install
 
   - name: run-cis-scan
-    disabled: {{ (not run_cis) | ternary('true','false') }}
+    remediationAction: {{ scan_remediation_action | default('inform') }}
+    disabled: {{ 'false' if run_cis else 'true' }}
     manifests:
       - path: compliance-operator/profiles/cis
 
   - name: run-pci-scan
-    disabled: {{ (not run_pci) | ternary('true','false') }}
+    remediationAction: {{ scan_remediation_action | default('inform') }}
+    disabled: {{ 'false' if run_pci else 'true' }}
     manifests:
       - path: compliance-operator/profiles/pci
-

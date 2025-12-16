@@ -3,22 +3,38 @@
   gather_facts: false
 
   vars:
-    # Defaults (puedes sobreescribir por -e)
-    github_token: ""
-    gitops_repo_url: "https://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@github.com/Snakerrrr/acm-policies.git"
+    # =========================
+    # Git / GitOps configuration
+    # =========================
+    github_user: "Snakerrrr"
+    github_token: "{{ github_token }}"   # se pasa por -e
+    gitops_repo_url: "https://{{ github_user }}:{{ github_token }}@github.com/Snakerrrr/acm-policies.git"
     gitops_repo_branch: "main"
     gitops_repo_path: "/tmp/acm-policies"
 
-    # En esta fase: healthcheck informativo + ejecutar ambos estándares
+    # =========================
+    # Compliance behavior
+    # =========================
     run_cis: true
     run_pci: true
+
+    # Acción de remediación para scans
     remediation_action: "inform"
 
-  tasks:
-   # - name: Ejecutar healthcheck (solo informativo)
-   #   include_role:
-   #     name: ocp_healthcheck
+    # Acción de remediación SOLO para instalar el operator
+    install_operator_remediation_action: "enforce"
 
+  tasks:
+    # -------------------------------------------------
+    # Healthcheck (deshabilitado temporalmente)
+    # -------------------------------------------------
+    # - name: Ejecutar healthcheck (solo informativo)
+    #   include_role:
+    #     name: ocp_healthcheck
+
+    # -------------------------------------------------
+    # Clonar / actualizar repo GitOps
+    # -------------------------------------------------
     - name: Clonar/actualizar repo GitOps (acm-policies)
       ansible.builtin.git:
         repo: "{{ gitops_repo_url }}"
@@ -26,15 +42,21 @@
         version: "{{ gitops_repo_branch }}"
         force: true
 
+    # -------------------------------------------------
+    # Renderizar PolicyGenerator vía rol
+    # -------------------------------------------------
     - name: Aplicar cambios a policy-generator-config.yaml
       include_role:
         name: toggle_policies
       vars:
-        run_cis: true
-        run_pci: true
-        scan_remediation_action: "{{ remediation_action | default('inform') }}"
-        install_operator_remediation_action: "enforce"
+        run_cis: "{{ run_cis }}"
+        run_pci: "{{ run_pci }}"
+        scan_remediation_action: "{{ remediation_action }}"
+        install_operator_remediation_action: "{{ install_operator_remediation_action }}"
 
+    # -------------------------------------------------
+    # Verificar cambios Git
+    # -------------------------------------------------
     - name: Verificar si hay cambios pendientes de commit
       command: git status --porcelain
       args:
@@ -42,6 +64,9 @@
       register: git_status
       changed_when: false
 
+    # -------------------------------------------------
+    # Commit + Push (solo si hay cambios)
+    # -------------------------------------------------
     - name: Hacer commit y push si hay cambios
       when: git_status.stdout != ""
       block:
@@ -56,12 +81,18 @@
             chdir: "{{ gitops_repo_path }}"
 
         - name: Hacer commit
-          command: git commit -am "Healthcheck+Compliance (CIS={{ run_cis }}, PCI={{ run_pci }}, remediation={{ remediation_action }})"
+          command: >
+            git commit -am
+            "Compliance GitOps update (CIS={{ run_cis }},
+             PCI={{ run_pci }},
+             remediation={{ remediation_action }})"
           args:
             chdir: "{{ gitops_repo_path }}"
 
-        - name: Hacer push
+        - name: Hacer push (sin prompts)
           command: git push origin "{{ gitops_repo_branch }}"
           args:
             chdir: "{{ gitops_repo_path }}"
+          environment:
+            GIT_TERMINAL_PROMPT: "0"
 
