@@ -5,7 +5,7 @@
   vars:
     # Defaults (puedes sobreescribir por -e)
     github_token: ""
-    gitops_repo_url: "https://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@github.com/Snakerrrr/acm-policies.git"
+    gitops_repo_url: "https://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@github.com/Snakerrrr/acm-policies.git"
     gitops_repo_branch: "main"
     gitops_repo_path: "/tmp/acm-policies"
 
