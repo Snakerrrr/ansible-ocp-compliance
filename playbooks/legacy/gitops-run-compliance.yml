@@ -1,0 +1,98 @@
+- name: Healthcheck (informativo) + Toggle Compliance via GitOps
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    # =========================
+    # Git / GitOps configuration
+    # =========================
+    github_user: "Snakerrrr"
+    github_token: "{{ github_token }}"   # se pasa por -e
+    gitops_repo_url: "https://{{ github_user }}:{{ github_token }}@github.com/Snakerrrr/acm-policies.git"
+    gitops_repo_branch: "main"
+    gitops_repo_path: "/tmp/acm-policies"
+
+    # =========================
+    # Compliance behavior
+    # =========================
+    run_cis: true
+    run_pci: true
+
+    # Acción de remediación para scans
+    remediation_action: "inform"
+
+    # Acción de remediación SOLO para instalar el operator
+    install_operator_remediation_action: "enforce"
+
+  tasks:
+    # -------------------------------------------------
+    # Healthcheck (deshabilitado temporalmente)
+    # -------------------------------------------------
+    # - name: Ejecutar healthcheck (solo informativo)
+    #   include_role:
+    #     name: ocp_healthcheck
+
+    # -------------------------------------------------
+    # Clonar / actualizar repo GitOps
+    # -------------------------------------------------
+    - name: Clonar/actualizar repo GitOps (acm-policies)
+      ansible.builtin.git:
+        repo: "{{ gitops_repo_url }}"
+        dest: "{{ gitops_repo_path }}"
+        version: "{{ gitops_repo_branch }}"
+        force: true
+
+    # -------------------------------------------------
+    # Renderizar PolicyGenerator vía rol
+    # -------------------------------------------------
+    - name: Aplicar cambios a policy-generator-config.yaml
+      include_role:
+        name: toggle_policies
+      vars:
+        run_cis: "{{ run_cis }}"
+        run_pci: "{{ run_pci }}"
+        _scan_remediation_action: "{{ remediation_action  | default('inform') }}"
+        _install_operator_remediation_action: "enforce"
+
+    # -------------------------------------------------
+    # Verificar cambios Git
+    # -------------------------------------------------
+    - name: Verificar si hay cambios pendientes de commit
+      command: git status --porcelain
+      args:
+        chdir: "{{ gitops_repo_path }}"
+      register: git_status
+      changed_when: false
+
+    # -------------------------------------------------
+    # Commit + Push (solo si hay cambios)
+    # -------------------------------------------------
+    - name: Hacer commit y push si hay cambios
+      when: git_status.stdout != ""
+      block:
+        - name: Configurar usuario Git para el commit
+          command: git config user.name "ansible-bot"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+
+        - name: Configurar email Git para el commit
+          command: git config user.email "ansible-bot@example.com"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+
+        - name: Hacer commit
+          command: >
+            git commit -am
+            "Compliance GitOps update (CIS={{ run_cis }},
+             PCI={{ run_pci }},
+             remediation={{ remediation_action }})"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+
+        - name: Hacer push (sin prompts)
+          command: git push origin "{{ gitops_repo_branch }}"
+          args:
+            chdir: "{{ gitops_repo_path }}"
+          environment:
+            GIT_TERMINAL_PROMPT: "0"
+

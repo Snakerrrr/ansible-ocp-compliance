@@ -1,0 +1,149 @@
+---
+# Playbook Unificado: compliance-pipeline.yml
+# ENTRYPOINT único para toda la automatización de compliance OCP
+#
+# Flags de control:
+#   do_gitops: true|false  - Ejecutar GitOps (toggle + commit + push)
+#   do_export_html: true|false - Exportar resultados a HTML
+#
+# Casos de uso:
+#   1. Solo activar scans (GitOps):
+#      ansible-playbook playbooks/compliance-pipeline.yml -i inventories/localhost.yml \
+#        -e "github_token=XXX do_gitops=true do_export_html=false"
+#
+#   2. Solo exportar HTML (healthcheck):
+#      ansible-playbook playbooks/compliance-pipeline.yml -i inventories/localhost.yml \
+#        -e "do_gitops=false do_export_html=true"
+#
+#   3. Pipeline completo:
+#      ansible-playbook playbooks/compliance-pipeline.yml -i inventories/localhost.yml \
+#        -e "github_token=XXX do_gitops=true do_export_html=true"
+
+- name: Compliance Pipeline OCP (CIS + PCI DSS)
+  hosts: localhost
+  gather_facts: true
+
+  vars:
+    # =========================
+    # Git / GitOps configuration (defaults)
+    # =========================
+    github_user: "Snakerrrr"
+    gitops_repo_branch: "main"
+    gitops_repo_path: "/tmp/acm-policies"
+
+    # =========================
+    # Compliance behavior (defaults)
+    # =========================
+    run_cis: true
+    run_pci: true
+    scan_remediation_action: "inform"
+    install_operator_remediation_action: "enforce"
+
+    # =========================
+    # Export HTML configuration (defaults)
+    # =========================
+    export_output_dir: "/tmp/compliance-reports"
+    # target_cluster_context: contexto de oc para acceder a PVCs del cluster objetivo
+    # Ejemplo: "cluster-acs" cuando se ejecuta desde el HUB
+    # Dejar vacío si los PVCs están en el cluster actual
+    target_cluster_context: ""
+
+    # =========================
+    # Control flags (defaults)
+    # =========================
+    do_gitops: false
+    do_export_html: false
+
+  tasks:
+    - name: Establecer valores finales de variables
+      set_fact:
+        _github_user: "{{ github_user | default('Snakerrrr') }}"
+        _github_token: "{{ github_token | default('') }}"
+        _gitops_repo_branch: "{{ gitops_repo_branch | default('main') }}"
+        _gitops_repo_path: "{{ gitops_repo_path | default('/tmp/acm-policies') }}"
+        _run_cis: "{{ run_cis if run_cis is defined else true }}"
+        _run_pci: "{{ run_pci if run_pci is defined else true }}"
+        _scan_remediation_action: "{{ scan_remediation_action | default('inform') }}"
+        _install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"
+        _export_output_dir: "{{ export_output_dir | default('/tmp/compliance-reports') }}"
+        _target_cluster_context: "{{ target_cluster_context | default('') }}"
+        _do_gitops: "{{ do_gitops | default(false) | bool }}"
+        _do_export_html: "{{ do_export_html | default(false) | bool }}"
+        _gitops_repo_url: "https://{{ github_user | default('Snakerrrr') }}:{{ github_token | default('') }}@github.com/{{ github_user | default('Snakerrrr') }}/acm-policies.git"
+
+    - name: Validar flags de control
+      fail:
+        msg: "Al menos uno de los flags debe estar activado: do_gitops o do_export_html"
+      when: not _do_gitops and not _do_export_html
+
+    - name: Mostrar configuración del pipeline
+      debug:
+        msg: |
+          ========================================
+          Configuración del Compliance Pipeline
+          ========================================
+          do_gitops: {{ _do_gitops }}
+          do_export_html: {{ _do_export_html }}
+          run_cis: {{ _run_cis }}
+          run_pci: {{ _run_pci }}
+          scan_remediation_action: {{ _scan_remediation_action }}
+          ========================================
+
+    # ============================================================
+    # FASE 1: GitOps (toggle policies + commit + push)
+    # ============================================================
+    - name: Ejecutar GitOps (toggle + commit + push)
+      when: _do_gitops | bool
+      block:
+        - name: Validar que github_token está definido para GitOps
+          fail:
+            msg: "github_token es requerido cuando do_gitops=true"
+          when: _github_token == "" or github_token is not defined
+
+        - name: Ejecutar rol gitops_policy_update
+          include_role:
+            name: gitops_policy_update
+          vars:
+            github_user: "{{ _github_user }}"
+            github_token: "{{ _github_token }}"
+            gitops_repo_path: "{{ _gitops_repo_path }}"
+            gitops_repo_branch: "{{ _gitops_repo_branch }}"
+            run_cis: "{{ _run_cis }}"
+            run_pci: "{{ _run_pci }}"
+            scan_remediation_action: "{{ _scan_remediation_action }}"
+            install_operator_remediation_action: "{{ _install_operator_remediation_action }}"
+
+        - name: Informar que GitOps se completó
+          debug:
+            msg: "GitOps completado. ArgoCD sincronizará automáticamente los cambios."
+
+    # ============================================================
+    # FASE 2: Export HTML (healthcheck informativo)
+    # ============================================================
+    - name: Ejecutar exportación HTML
+      when: _do_export_html | bool
+      block:
+        - name: Ejecutar rol compliance_export_html
+          include_role:
+            name: compliance_export_html
+          vars:
+            export_output_dir: "{{ _export_output_dir }}"
+            target_cluster_context: "{{ _target_cluster_context }}"
+
+        - name: Informar que exportación se completó
+          debug:
+            msg: "Exportación HTML completada. Reportes disponibles en: {{ _export_output_dir }}"
+
+    # ============================================================
+    # Resumen final
+    # ============================================================
+    - name: Resumen final del pipeline
+      debug:
+        msg: |
+          ========================================
+          Compliance Pipeline - Ejecución Completada
+          ========================================
+          GitOps ejecutado: {{ _do_gitops }}
+          Export HTML ejecutado: {{ _do_export_html }}
+          ========================================
+

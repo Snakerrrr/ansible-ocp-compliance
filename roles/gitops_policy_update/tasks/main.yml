@@ -1,0 +1,109 @@
+---
+# Rol: gitops_policy_update
+# Responsabilidad: GitOps puro (clone, toggle, commit, push)
+# NO renderiza policies (eso lo hace toggle_policies)
+# NO aplica manifests (eso lo hace ArgoCD/ACM)
+
+- name: Validar que github_token está definido
+  fail:
+    msg: "github_token es requerido para operaciones GitOps"
+  when: github_token is not defined or github_token == ""
+
+- name: Construir URL del repo GitOps
+  set_fact:
+    gitops_repo_url: "https://{{ github_user | default('Snakerrrr') }}:{{ github_token }}@github.com/{{ github_user | default('Snakerrrr') }}/acm-policies.git"
+
+- name: Establecer valores para evitar recursión
+  set_fact:
+    _final_scan_remediation_action: "{{ scan_remediation_action if (scan_remediation_action is defined and scan_remediation_action != '') else 'inform' }}"
+    _final_install_operator_remediation_action: "{{ install_operator_remediation_action if (install_operator_remediation_action is defined and install_operator_remediation_action != '') else 'enforce' }}"
+    _final_gitops_repo_path: "{{ gitops_repo_path if (gitops_repo_path is defined and gitops_repo_path != '') else '/tmp/acm-policies' }}"
+    _final_gitops_repo_branch: "{{ gitops_repo_branch if (gitops_repo_branch is defined and gitops_repo_branch != '') else 'main' }}"
+
+- name: Establecer valores booleanos para run_cis y run_pci
+  set_fact:
+    _final_run_cis: "{{ run_cis if run_cis is defined else true }}"
+    _final_run_pci: "{{ run_pci if run_pci is defined else true }}"
+
+- name: Clonar/actualizar repo GitOps (acm-policies)
+  ansible.builtin.git:
+    repo: "{{ gitops_repo_url }}"
+    dest: "{{ _final_gitops_repo_path }}"
+    version: "{{ _final_gitops_repo_branch }}"
+    force: true
+
+- name: Renderizar policy-generator-config.yaml vía toggle_policies
+  include_role:
+    name: toggle_policies
+  vars:
+    run_cis: "{{ _final_run_cis }}"
+    run_pci: "{{ _final_run_pci }}"
+    _scan_remediation_action: "{{ _final_scan_remediation_action }}"
+    _install_operator_remediation_action: "{{ _final_install_operator_remediation_action }}"
+    gitops_repo_path: "{{ _final_gitops_repo_path }}"
+
+- name: Verificar si hay cambios pendientes de commit
+  command: git status --porcelain
+  args:
+    chdir: "{{ _final_gitops_repo_path }}"
+  register: git_status
+  changed_when: false
+
+- name: Mostrar estado de git
+  debug:
+    msg: "Estado de git: {{ git_status.stdout if git_status.stdout != '' else 'Sin cambios' }}"
+
+- name: Mostrar información del último commit
+  command: git log -1 --oneline
+  args:
+    chdir: "{{ _final_gitops_repo_path }}"
+  register: last_commit
+  changed_when: false
+
+- name: Mostrar último commit
+  debug:
+    msg: "Último commit en repo: {{ last_commit.stdout }}"
+
+- name: Hacer commit y push si hay cambios
+  when: git_status.stdout != ""
+  block:
+    - name: Configurar usuario Git para el commit
+      command: git config user.name "ansible-bot"
+      args:
+        chdir: "{{ _final_gitops_repo_path }}"
+
+    - name: Configurar email Git para el commit
+      command: git config user.email "ansible-bot@example.com"
+      args:
+        chdir: "{{ _final_gitops_repo_path }}"
+
+    - name: Agregar todos los cambios al staging
+      command: git add -A
+      args:
+        chdir: "{{ _final_gitops_repo_path }}"
+
+    - name: Hacer commit
+      command: >
+        git commit -m
+        "Compliance GitOps update (CIS={{ _final_run_cis }},
+         PCI={{ _final_run_pci }},
+         remediation={{ _final_scan_remediation_action }})"
+      args:
+        chdir: "{{ _final_gitops_repo_path }}"
+
+    - name: Hacer push (sin prompts)
+      command: git push origin "{{ _final_gitops_repo_branch }}"
+      args:
+        chdir: "{{ _final_gitops_repo_path }}"
+      environment:
+        GIT_TERMINAL_PROMPT: "0"
+
+    - name: Mostrar mensaje de éxito
+      debug:
+        msg: "Cambios GitOps aplicados exitosamente. ArgoCD sincronizará automáticamente."
+
+- name: Informar si no hay cambios
+  when: git_status.stdout == ""
+  debug:
+    msg: "No hay cambios en el repo GitOps. Nada que commitear."
+

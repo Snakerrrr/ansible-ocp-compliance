@@ -1,0 +1,25 @@
+========================================
+Resumen de Reportes de Compliance OCP
+========================================
+Fecha: {{ ansible_date_time.iso8601 }}
+
+PVCs CIS procesados:
+{% for pvc in cis_pvcs %}
+  - {{ pvc }}
+{% endfor %}
+
+PVCs PCI DSS procesados:
+{% for pvc in pci_pvcs %}
+  - {{ pvc }}
+{% endfor %}
+
+Ubicación de reportes:
+  Directorio: {{ export_output_dir }}
+
+Archivos generados:
+  - HTML: Reportes navegables en formato HTML
+  - XML: Datos originales en formato XML
+  - summary.txt: Este archivo
+
+========================================
+

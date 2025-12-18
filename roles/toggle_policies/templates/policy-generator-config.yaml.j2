@@ -2,10 +2,11 @@ apiVersion: policy.open-cluster-management.io/v1
 kind: PolicyGenerator
 metadata:
   name: compliance-operator-policies
+  # Última actualización: {{ ansible_date_time.iso8601 }}
 
 policyDefaults:
   namespace: policies
-  remediationAction: {{ scan_remediation_action | default('inform') }}
+  remediationAction: {{ _scan_remediation_action | default('inform') }}
   placement:
     labelSelector:
       matchExpressions:
@@ -17,7 +18,7 @@ policyDefaults:
 policies:
   - name: install-compliance-operator
     disabled: false
-    remediationAction: {{ _install_operator_remediation_action }}
+    remediationAction: {{ _install_operator_remediation_action | default('enforce') }}
     manifests:
       - path: compliance-operator/install
 

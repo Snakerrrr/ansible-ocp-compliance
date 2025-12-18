@@ -1,0 +1,269 @@
+---
+# Rol: compliance_export_html
+# Responsabilidad: Healthcheck informativo
+# Exporta resultados de PVCs (ocp4-cis*, ocp4-pci-dss*) a HTML
+# 
+# IMPORTANTE: Cuando se ejecuta desde el HUB, los PVCs están en el cluster-acs
+# Usar variable 'target_cluster_context' para especificar el contexto del cluster objetivo
+# Ejemplo: target_cluster_context=cluster-acs
+
+- name: Verificar que oc está disponible
+  command: oc version --client
+  register: oc_version
+  changed_when: false
+  failed_when: false
+
+- name: Fallar si oc no está disponible
+  fail:
+    msg: "oc (OpenShift CLI) no está disponible. Este rol requiere estar logueado al cluster."
+  when: oc_version.rc != 0
+
+- name: Establecer contexto de cluster objetivo
+  set_fact:
+    target_cluster_context: "{{ target_cluster_context | default('') }}"
+    oc_context_arg: "{{ '--context=' + target_cluster_context if target_cluster_context != '' else '' }}"
+
+- name: Verificar que oscap está disponible
+  command: which oscap
+  register: oscap_check
+  changed_when: false
+  failed_when: false
+
+- name: Fallar si oscap no está disponible
+  fail:
+    msg: "oscap (openscap-scanner) no está disponible. Instalar con: yum install openscap-scanner"
+  when: oscap_check.rc != 0
+
+- name: Verificar que bzip2 está disponible
+  command: which bunzip2 || which bzip2
+  register: bzip2_check
+  changed_when: false
+  failed_when: false
+
+- name: Advertir si bzip2 no está disponible
+  debug:
+    msg: "Advertencia: bunzip2/bzip2 no está disponible. Los archivos .bzip2 no se podrán descomprimir automáticamente."
+  when: bzip2_check.rc != 0
+
+- name: Verificar que zip está disponible
+  command: which zip
+  register: zip_check
+  changed_when: false
+  failed_when: false
+
+- name: Advertir si zip no está disponible
+  debug:
+    msg: "Advertencia: zip no está disponible. No se podrá crear el archivo ZIP. Instalar con: sudo apt-get install zip"
+  when: zip_check.rc != 0
+
+- name: Definir directorio de salida
+  set_fact:
+    export_output_dir: "{{ export_output_dir | default('/tmp/compliance-reports') }}"
+
+- name: Crear directorio de salida
+  file:
+    path: "{{ export_output_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Mostrar contexto de cluster que se usará
+  debug:
+    msg: "{{ 'Usando contexto: ' + target_cluster_context if target_cluster_context != '' else 'Usando contexto actual (PVCs deben estar en este cluster)' }}"
+
+- name: Buscar PVCs de CIS
+  command: oc get pvc -n openshift-compliance {{ oc_context_arg }} --no-headers -o custom-columns=NAME:.metadata.name
+  register: pvc_list
+  changed_when: false
+
+- name: Filtrar PVCs CIS y PCI
+  set_fact:
+    cis_pvcs: "{{ pvc_list.stdout_lines | select('match', '^ocp4-cis.*') | list }}"
+    pci_pvcs: "{{ pvc_list.stdout_lines | select('match', '^ocp4-pci-dss.*') | list }}"
+
+- name: Mostrar PVCs encontrados
+  debug:
+    msg: "PVCs CIS encontrados: {{ cis_pvcs }}, PVCs PCI encontrados: {{ pci_pvcs }}"
+
+- name: Procesar cada PVC CIS
+  when: cis_pvcs | length > 0
+  include_tasks: process_pvc.yml
+  loop: "{{ cis_pvcs }}"
+  loop_control:
+    label: "{{ item }}"
+  vars:
+    pvc_name: "{{ item }}"
+    pvc_type: "cis"
+
+- name: Procesar cada PVC PCI
+  when: pci_pvcs | length > 0
+  include_tasks: process_pvc.yml
+  loop: "{{ pci_pvcs }}"
+  loop_control:
+    label: "{{ item }}"
+  vars:
+    pvc_name: "{{ item }}"
+    pvc_type: "pci"
+
+- name: Renderizar script de conversión XML → HTML
+  template:
+    src: render_reports.sh.j2
+    dest: "{{ export_output_dir }}/render_reports.sh"
+    mode: '0755'
+
+- name: Ejecutar conversión XML → HTML
+  command: "{{ export_output_dir }}/render_reports.sh"
+  args:
+    chdir: "{{ export_output_dir }}"
+  register: render_script_output
+  changed_when: render_script_output.rc == 0
+  failed_when: false
+
+- name: Mostrar salida del script de renderizado
+  debug:
+    msg: "{{ render_script_output.stdout_lines }}"
+  when: render_script_output.stdout_lines is defined
+
+- name: Mostrar errores del script de renderizado (si los hay)
+  debug:
+    msg: "{{ render_script_output.stderr_lines }}"
+  when: render_script_output.stderr_lines is defined and render_script_output.stderr_lines | length > 0
+
+- name: Verificar archivos HTML generados
+  find:
+    paths: "{{ export_output_dir }}"
+    patterns: "*.html"
+    recurse: true
+  register: html_files
+
+- name: Mostrar cantidad de archivos HTML generados
+  debug:
+    msg: "Se generaron {{ html_files.files | length }} archivo(s) HTML"
+
+- name: Limpiar archivos intermedios (mantener solo HTMLs)
+  block:
+    - name: Contar archivos a eliminar
+      find:
+        paths: "{{ export_output_dir }}"
+        patterns:
+          - "*.bzip2"
+          - "*.bzip2.out"
+          - "*.xml"
+        recurse: true
+      register: files_to_delete
+
+    - name: Mostrar archivos que se eliminarán
+      debug:
+        msg: "Se eliminarán {{ files_to_delete.files | length }} archivo(s) intermedios (.bzip2, .bzip2.out, .xml)"
+
+    - name: Eliminar archivos .bzip2
+      find:
+        paths: "{{ export_output_dir }}"
+        patterns: "*.bzip2"
+        recurse: true
+      register: bzip2_files
+
+    - name: Eliminar archivos .bzip2 encontrados
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ bzip2_files.files }}"
+      when: bzip2_files.files | length > 0
+
+    - name: Eliminar archivos .bzip2.out
+      find:
+        paths: "{{ export_output_dir }}"
+        patterns: "*.bzip2.out"
+        recurse: true
+      register: bzip2_out_files
+
+    - name: Eliminar archivos .bzip2.out encontrados
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ bzip2_out_files.files }}"
+      when: bzip2_out_files.files | length > 0
+
+    - name: Eliminar archivos .xml (ya convertidos a HTML)
+      find:
+        paths: "{{ export_output_dir }}"
+        patterns: "*.xml"
+        recurse: true
+      register: xml_files
+
+    - name: Eliminar archivos XML encontrados
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ xml_files.files }}"
+      when: xml_files.files | length > 0
+
+    - name: Eliminar script temporal render_reports.sh
+      file:
+        path: "{{ export_output_dir }}/render_reports.sh"
+        state: absent
+
+    - name: Eliminar directorios lost+found si existen
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ files_to_delete.files | selectattr('path', 'match', '.*lost\\+found.*') | list }}"
+      ignore_errors: true
+
+    - name: Mostrar resumen de limpieza
+      debug:
+        msg: |
+          ✅ Limpieza completada:
+          - Archivos intermedios eliminados (.bzip2, .bzip2.out, .xml)
+          - Solo se mantienen archivos HTML y summary.txt
+
+- name: Generar summary.txt
+  template:
+    src: summary.txt.j2
+    dest: "{{ export_output_dir }}/summary.txt"
+  vars:
+    cis_pvcs: "{{ cis_pvcs }}"
+    pci_pvcs: "{{ pci_pvcs }}"
+    export_output_dir: "{{ export_output_dir }}"
+
+- name: Crear ZIP solo con HTMLs y summary (sin archivos intermedios)
+  shell: |
+    cd "{{ export_output_dir }}"
+    find . -type f \( -name "*.html" -o -name "summary.txt" \) | zip -@ "compliance-reports-{{ ansible_date_time.epoch }}.zip"
+  args:
+    executable: /bin/bash
+  register: zip_creation
+  changed_when: zip_creation.rc == 0
+  failed_when: zip_check.rc != 0 and zip_creation.rc != 0
+  when: zip_check.rc == 0
+
+- name: Verificar estructura final del directorio
+  find:
+    paths: "{{ export_output_dir }}"
+    file_type: file
+    recurse: true
+  register: final_files
+
+- name: Mostrar estructura final
+  debug:
+    msg: |
+      ✅ Reportes de compliance exportados y limpiados exitosamente:
+      
+      📊 Resumen:
+      - Archivos HTML generados: {{ html_files.files | length }}
+      - Archivos totales en directorio: {{ final_files.files | length }}
+      
+      📁 Ubicación:
+      - Directorio: {{ export_output_dir }}
+      {% if zip_check.rc == 0 %}
+      - ZIP (solo HTMLs): {{ export_output_dir }}/compliance-reports-{{ ansible_date_time.epoch }}.zip
+      {% else %}
+      - ZIP: No disponible (zip no está instalado)
+      {% endif %}
+      - Summary: {{ export_output_dir }}/summary.txt
+      
+      🗑️  Archivos intermedios eliminados:
+      - Todos los archivos .bzip2, .bzip2.out y .xml han sido eliminados
+      - Solo se mantienen los reportes HTML finales para visualización
+      
+      💡 Nota: El directorio ahora contiene solo los archivos HTML necesarios para revisar el cumplimiento.
+

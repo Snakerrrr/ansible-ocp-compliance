@@ -1,8 +1,6 @@
 ---
-- name: Defaults internos (evita vars undefined y loops)
-  set_fact:
-    _scan_remediation_action: "{{ _scan_remediation_action | default('inform') }}"
-    _install_operator_remediation_action: "{{ _install_operator_remediation_action | default('enforce') }}"
+# No establecer defaults aquí - las variables deben venir del rol que llama
+# Si no vienen definidas, el template usará los defaults
 
 - name: Validar que el repo GitOps existe
   stat:
