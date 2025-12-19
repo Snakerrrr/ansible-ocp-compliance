@@ -1,11 +1,7 @@
 ---
 # Rol: compliance_export_html
-# Responsabilidad: Healthcheck informativo
-# Exporta resultados de PVCs (ocp4-cis*, ocp4-pci-dss*) a HTML
-# 
-# IMPORTANTE: Cuando se ejecuta desde el HUB, los PVCs están en el cluster-acs
-# Usar variable 'target_cluster_context' para especificar el contexto del cluster objetivo
-# Ejemplo: target_cluster_context=cluster-acs
+# Responsabilidad: Exportar resultados de compliance desde PVCs a HTML
+# Se ejecuta desde el HUB y puede acceder a managed clusters usando kubeconfig
 
 - name: Verificar que oc está disponible
   command: oc version --client
@@ -18,10 +14,196 @@
     msg: "oc (OpenShift CLI) no está disponible. Este rol requiere estar logueado al cluster."
   when: oc_version.rc != 0
 
-- name: Establecer contexto de cluster objetivo
+- name: Establecer variables iniciales básicas
   set_fact:
     target_cluster_context: "{{ target_cluster_context | default('') }}"
-    oc_context_arg: "{{ '--context=' + target_cluster_context if target_cluster_context != '' else '' }}"
+    managed_cluster_name: "{{ target_cluster_context }}"
+
+- name: Establecer kubeconfig_secret_namespace (valor por defecto basado en managed_cluster_name)
+  set_fact:
+    kubeconfig_secret_namespace: "{{ managed_cluster_name if (target_cluster_context != '' and managed_cluster_name != '') else 'openshift-compliance' }}"
+
+- name: Establecer managed_cluster_kubeconfigs (siempre usar diccionario vacío por defecto)
+  set_fact:
+    _managed_cluster_kubeconfigs: "{{ {} }}"
+
+- name: Establecer lista de nombres de secrets de ACM
+  set_fact:
+    acm_secret_names: "{{ ['admin-kubeconfig', managed_cluster_name + '-import', managed_cluster_name + '-bootstrap-sa-token'] }}"
+
+- name: Obtener import.yaml del secret cluster-import
+  shell: |
+    oc get secret {{ managed_cluster_name }}-import -n {{ managed_cluster_name }} -o jsonpath='{.data.import\.yaml}' 2>&1 | base64 -d || echo ""
+  register: import_yaml_raw
+  changed_when: false
+  failed_when: false
+  when: target_cluster_context != ''
+
+- name: Establecer ruta del archivo temporal import.yaml
+  set_fact:
+    import_yaml_file: "/tmp/import-{{ managed_cluster_name }}.yaml"
+  when: target_cluster_context != ''
+
+- name: Guardar import.yaml en archivo temporal
+  copy:
+    content: "{{ import_yaml_raw.stdout }}"
+    dest: "{{ import_yaml_file }}"
+    mode: '0600'
+  when:
+    - target_cluster_context != ''
+    - import_yaml_raw.stdout is defined
+    - import_yaml_raw.stdout | length > 100
+
+- name: Crear script temporal para extraer kubeconfig
+  template:
+    src: extract-kubeconfig.sh.j2
+    dest: "/tmp/extract-kubeconfig-{{ managed_cluster_name }}.sh"
+    mode: '0755'
+  when:
+    - target_cluster_context != ''
+    - import_yaml_raw.stdout is defined
+    - import_yaml_raw.stdout | length > 100
+
+- name: Extraer kubeconfig desde bootstrap-hub-kubeconfig en import.yaml
+  command: "/tmp/extract-kubeconfig-{{ managed_cluster_name }}.sh {{ import_yaml_file }}"
+  register: kubeconfig_from_import
+  changed_when: false
+  failed_when: false
+  when:
+    - target_cluster_context != ''
+    - import_yaml_raw.stdout is defined
+    - import_yaml_raw.stdout | length > 100
+
+- name: Buscar admin-kubeconfig (prioridad - kubeconfig del managed cluster)
+  shell: |
+    oc get secret admin-kubeconfig -n {{ managed_cluster_name }} -o jsonpath='{.data.kubeconfig}' 2>&1 | base64 -d || echo ""
+  register: kubeconfig_from_admin
+  changed_when: false
+  failed_when: false
+  when: target_cluster_context != ''
+
+- name: Determinar kubeconfig final desde secrets de ACM (priorizar admin-kubeconfig sobre bootstrap-hub-kubeconfig)
+  set_fact:
+    kubeconfig_from_acm_secret: "{{ kubeconfig_from_admin if (kubeconfig_from_admin.stdout is defined and kubeconfig_from_admin.stdout != '' and kubeconfig_from_admin.stdout | length > 100) else (kubeconfig_from_import if (kubeconfig_from_import.stdout is defined and kubeconfig_from_import.stdout != '' and kubeconfig_from_import.stdout | length > 100) else {'rc': 1, 'stdout': ''}) }}"
+  when: target_cluster_context != ''
+
+- name: Buscar kubeconfig en secret personalizado (fallback)
+  shell: |
+    oc get secret managed-cluster-kubeconfig-{{ managed_cluster_name }} -n {{ kubeconfig_secret_namespace }} -o jsonpath='{.data.kubeconfig}' 2>&1 | base64 -d || echo ""
+  register: kubeconfig_from_custom_secret
+  changed_when: false
+  failed_when: false
+  when: target_cluster_context != ''
+
+- name: Determinar qué secret se usó
+  set_fact:
+    kubeconfig_from_secret: "{{ kubeconfig_from_acm_secret if (kubeconfig_from_acm_secret.rc == 0 and kubeconfig_from_acm_secret.stdout != '' and kubeconfig_from_acm_secret.stdout | length > 100) else (kubeconfig_from_custom_secret if (kubeconfig_from_custom_secret.rc == 0 and kubeconfig_from_custom_secret.stdout != '' and kubeconfig_from_custom_secret.stdout | length > 100) else {'rc': 1, 'stdout': ''}) }}"
+    secret_source: "{{ 'admin_kubeconfig' if (kubeconfig_from_admin.stdout is defined and kubeconfig_from_admin.stdout != '' and kubeconfig_from_admin.stdout | length > 100) else ('bootstrap_hub_kubeconfig' if (kubeconfig_from_import.stdout is defined and kubeconfig_from_import.stdout != '' and kubeconfig_from_import.stdout | length > 100) else ('custom' if (kubeconfig_from_custom_secret.rc == 0 and kubeconfig_from_custom_secret.stdout != '' and kubeconfig_from_custom_secret.stdout | length > 100) else 'none')) }}"
+  when: target_cluster_context != ''
+
+- name: Guardar kubeconfig desde secret a archivo temporal
+  copy:
+    content: "{{ kubeconfig_from_secret.stdout }}"
+    dest: "/tmp/kubeconfig-{{ managed_cluster_name }}"
+    mode: '0600'
+  when:
+    - target_cluster_context != ''
+    - secret_source != 'none'
+    - kubeconfig_from_secret.stdout != ''
+    - kubeconfig_from_secret.stdout | length > 100
+
+- name: Determinar ruta del kubeconfig del managed cluster (fallback a archivo local)
+  set_fact:
+    managed_cluster_kubeconfig_path: "{{ ('/tmp/kubeconfig-' + managed_cluster_name) if (target_cluster_context != '' and secret_source != 'none') else (_managed_cluster_kubeconfigs[managed_cluster_name] if (target_cluster_context != '' and _managed_cluster_kubeconfigs is defined and managed_cluster_name in _managed_cluster_kubeconfigs) else ('/tmp/kubeconfig-' + managed_cluster_name if target_cluster_context != '' else '')) }}"
+    oc_context_arg: ""
+    is_managed_cluster: "{{ target_cluster_context != '' }}"
+    kubeconfig_source: "{{ secret_source if (target_cluster_context != '' and secret_source != 'none') else ('file' if (target_cluster_context != '' and _managed_cluster_kubeconfigs is defined and managed_cluster_name in _managed_cluster_kubeconfigs) else ('default_file' if target_cluster_context != '' else 'none')) }}"
+  when: target_cluster_context != ''
+
+- name: Verificar si existe kubeconfig en archivo (fallback)
+  stat:
+    path: "{{ managed_cluster_kubeconfig_path }}"
+  register: kubeconfig_exists
+  when:
+    - target_cluster_context != ''
+    - managed_cluster_kubeconfig_path != ''
+    - kubeconfig_source not in ['acm_native', 'custom']
+
+- name: Verificar validez del kubeconfig
+  shell: |
+    KUBECONFIG="{{ managed_cluster_kubeconfig_path }}" oc whoami &>/dev/null && echo "valid" || echo "invalid"
+  register: kubeconfig_validity
+  changed_when: false
+  failed_when: false
+  when:
+    - target_cluster_context != ''
+    - (kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists)
+
+- name: Advertir si el kubeconfig está expirado
+  debug:
+    msg: |
+      ⚠️  El kubeconfig para '{{ target_cluster_context }}' está expirado o inválido.
+      
+      {% if kubeconfig_source == 'acm_native' %}
+      El kubeconfig viene de un secret nativo de ACM (admin-kubeconfig o {{ managed_cluster_name }}-import).
+      ACM debería renovarlo automáticamente. Si persiste el problema, verifica:
+        oc get secret admin-kubeconfig -n {{ managed_cluster_name }}
+        oc get secret {{ managed_cluster_name }}-import -n {{ managed_cluster_name }}
+      {% elif kubeconfig_source == 'custom' %}
+      Para renovarlo, actualiza el secret personalizado:
+        ./scripts/crear-secret-kubeconfig.sh {{ target_cluster_context }}
+      {% else %}
+      Para renovarlo:
+      1. Loguearte al managed cluster: oc login <api-server-url>
+      2. Exportar nuevo kubeconfig: oc config view --minify --raw > {{ managed_cluster_kubeconfig_path }}
+      3. Ajustar permisos: chmod 600 {{ managed_cluster_kubeconfig_path }}
+      4. (Opcional) Guardar en secret: ./scripts/crear-secret-kubeconfig.sh {{ target_cluster_context }} {{ managed_cluster_kubeconfig_path }}
+      {% endif %}
+  when:
+    - target_cluster_context != ''
+    - (kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists)
+    - kubeconfig_validity.stdout == "invalid"
+
+- name: Fallar si no se puede acceder al managed cluster
+  fail:
+    msg: |
+      ❌ No se encontró kubeconfig para el managed cluster '{{ target_cluster_context }}'.
+      
+      El playbook buscó en:
+      1. Secrets nativos de ACM en namespace '{{ managed_cluster_name }}':
+         - admin-kubeconfig
+         - {{ managed_cluster_name }}-import
+         - Cualquier secret con "kubeconfig" en el nombre
+      
+      2. Secret personalizado: managed-cluster-kubeconfig-{{ managed_cluster_name }} en namespace '{{ kubeconfig_secret_namespace }}'
+      
+      3. Variable managed_cluster_kubeconfigs
+      
+      4. Archivo: /tmp/kubeconfig-{{ target_cluster_context }}
+      
+      Soluciones:
+      - Verificar que el namespace '{{ managed_cluster_name }}' existe: oc get namespace {{ managed_cluster_name }}
+      - Listar secrets disponibles: oc get secrets -n {{ managed_cluster_name }}
+      - Si no hay secret nativo, crear uno: ./scripts/crear-secret-kubeconfig.sh {{ target_cluster_context }}
+      - Si los PVCs están en el Hub, no especifiques target_cluster_context
+  when:
+    - target_cluster_context != ''
+    - not ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))
+
+- name: Mostrar método de acceso al cluster
+  debug:
+    msg: |
+      Método de acceso al cluster:
+      - Cluster: {{ managed_cluster_name if target_cluster_context != '' else 'Hub (contexto actual)' }}
+      - Fuente: {{ kubeconfig_source if target_cluster_context != '' else 'Contexto actual' }}
+      - Kubeconfig: {{ managed_cluster_kubeconfig_path if (target_cluster_context != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else 'Contexto actual' }}
+      {% if kubeconfig_source == 'acm_native' %}
+      - Secret nativo de ACM en namespace: {{ managed_cluster_name }}
+      - Secrets buscados: admin-kubeconfig, {{ managed_cluster_name }}-import
+      {% elif kubeconfig_source == 'custom' %}
+      - Secret personalizado: managed-cluster-kubeconfig-{{ managed_cluster_name }} en namespace {{ kubeconfig_secret_namespace }}
+      {% endif %}
+  when: target_cluster_context != ''
 
 - name: Verificar que oscap está disponible
   command: which oscap
@@ -66,14 +248,11 @@
     state: directory
     mode: '0755'
 
-- name: Mostrar contexto de cluster que se usará
-  debug:
-    msg: "{{ 'Usando contexto: ' + target_cluster_context if target_cluster_context != '' else 'Usando contexto actual (PVCs deben estar en este cluster)' }}"
-
-- name: Buscar PVCs de CIS
-  command: oc get pvc -n openshift-compliance {{ oc_context_arg }} --no-headers -o custom-columns=NAME:.metadata.name
+- name: Buscar PVCs de compliance
+  command: oc get pvc -n openshift-compliance {{ oc_context_arg | default('') }} --no-headers -o custom-columns=NAME:.metadata.name
   register: pvc_list
   changed_when: false
+  environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (target_cluster_context != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else {} }}"
 
 - name: Filtrar PVCs CIS y PCI
   set_fact:
@@ -84,6 +263,11 @@
   debug:
     msg: "PVCs CIS encontrados: {{ cis_pvcs }}, PVCs PCI encontrados: {{ pci_pvcs }}"
 
+- name: Establecer valores finales para sub-tareas
+  set_fact:
+    _final_managed_cluster_kubeconfig_path: "{{ managed_cluster_kubeconfig_path if (target_cluster_context != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else '' }}"
+    _final_oc_context_arg: "{{ oc_context_arg | default('') }}"
+
 - name: Procesar cada PVC CIS
   when: cis_pvcs | length > 0
   include_tasks: process_pvc.yml
@@ -93,6 +277,8 @@
   vars:
     pvc_name: "{{ item }}"
     pvc_type: "cis"
+    oc_context_arg: "{{ _final_oc_context_arg }}"
+    managed_cluster_kubeconfig_path: "{{ _final_managed_cluster_kubeconfig_path }}"
 
 - name: Procesar cada PVC PCI
   when: pci_pvcs | length > 0
@@ -103,6 +289,8 @@
   vars:
     pvc_name: "{{ item }}"
     pvc_type: "pci"
+    oc_context_arg: "{{ _final_oc_context_arg }}"
+    managed_cluster_kubeconfig_path: "{{ _final_managed_cluster_kubeconfig_path }}"
 
 - name: Renderizar script de conversión XML → HTML
   template:
@@ -118,16 +306,6 @@
   changed_when: render_script_output.rc == 0
   failed_when: false
 
-- name: Mostrar salida del script de renderizado
-  debug:
-    msg: "{{ render_script_output.stdout_lines }}"
-  when: render_script_output.stdout_lines is defined
-
-- name: Mostrar errores del script de renderizado (si los hay)
-  debug:
-    msg: "{{ render_script_output.stderr_lines }}"
-  when: render_script_output.stderr_lines is defined and render_script_output.stderr_lines | length > 0
-
 - name: Verificar archivos HTML generados
   find:
     paths: "{{ export_output_dir }}"
@@ -135,26 +313,8 @@
     recurse: true
   register: html_files
 
-- name: Mostrar cantidad de archivos HTML generados
-  debug:
-    msg: "Se generaron {{ html_files.files | length }} archivo(s) HTML"
-
-- name: Limpiar archivos intermedios (mantener solo HTMLs)
+- name: Limpiar archivos intermedios
   block:
-    - name: Contar archivos a eliminar
-      find:
-        paths: "{{ export_output_dir }}"
-        patterns:
-          - "*.bzip2"
-          - "*.bzip2.out"
-          - "*.xml"
-        recurse: true
-      register: files_to_delete
-
-    - name: Mostrar archivos que se eliminarán
-      debug:
-        msg: "Se eliminarán {{ files_to_delete.files | length }} archivo(s) intermedios (.bzip2, .bzip2.out, .xml)"
-
     - name: Eliminar archivos .bzip2
       find:
         paths: "{{ export_output_dir }}"
@@ -183,7 +343,7 @@
       loop: "{{ bzip2_out_files.files }}"
       when: bzip2_out_files.files | length > 0
 
-    - name: Eliminar archivos .xml (ya convertidos a HTML)
+    - name: Eliminar archivos .xml
       find:
         paths: "{{ export_output_dir }}"
         patterns: "*.xml"
@@ -197,24 +357,25 @@
       loop: "{{ xml_files.files }}"
       when: xml_files.files | length > 0
 
-    - name: Eliminar script temporal render_reports.sh
+    - name: Eliminar script temporal
       file:
         path: "{{ export_output_dir }}/render_reports.sh"
         state: absent
 
-    - name: Eliminar directorios lost+found si existen
+    - name: Eliminar directorios lost+found
+      find:
+        paths: "{{ export_output_dir }}"
+        patterns: "lost+found"
+        file_type: directory
+        recurse: true
+      register: lost_found_dirs
+
+    - name: Eliminar directorios lost+found encontrados
       file:
         path: "{{ item.path }}"
         state: absent
-      loop: "{{ files_to_delete.files | selectattr('path', 'match', '.*lost\\+found.*') | list }}"
+      loop: "{{ lost_found_dirs.files }}"
       ignore_errors: true
-
-    - name: Mostrar resumen de limpieza
-      debug:
-        msg: |
-          ✅ Limpieza completada:
-          - Archivos intermedios eliminados (.bzip2, .bzip2.out, .xml)
-          - Solo se mantienen archivos HTML y summary.txt
 
 - name: Generar summary.txt
   template:
@@ -225,7 +386,7 @@
     pci_pvcs: "{{ pci_pvcs }}"
     export_output_dir: "{{ export_output_dir }}"
 
-- name: Crear ZIP solo con HTMLs y summary (sin archivos intermedios)
+- name: Crear ZIP con HTMLs y summary
   shell: |
     cd "{{ export_output_dir }}"
     find . -type f \( -name "*.html" -o -name "summary.txt" \) | zip -@ "compliance-reports-{{ ansible_date_time.epoch }}.zip"
@@ -236,34 +397,24 @@
   failed_when: zip_check.rc != 0 and zip_creation.rc != 0
   when: zip_check.rc == 0
 
-- name: Verificar estructura final del directorio
+- name: Verificar estructura final
   find:
     paths: "{{ export_output_dir }}"
     file_type: file
     recurse: true
   register: final_files
 
-- name: Mostrar estructura final
+- name: Mostrar resumen final
   debug:
     msg: |
-      ✅ Reportes de compliance exportados y limpiados exitosamente:
+      ✅ Reportes de compliance exportados exitosamente:
       
       📊 Resumen:
       - Archivos HTML generados: {{ html_files.files | length }}
-      - Archivos totales en directorio: {{ final_files.files | length }}
+      - Archivos totales: {{ final_files.files | length }}
       
-      📁 Ubicación:
-      - Directorio: {{ export_output_dir }}
+      📁 Ubicación: {{ export_output_dir }}
       {% if zip_check.rc == 0 %}
-      - ZIP (solo HTMLs): {{ export_output_dir }}/compliance-reports-{{ ansible_date_time.epoch }}.zip
-      {% else %}
-      - ZIP: No disponible (zip no está instalado)
+      - ZIP: {{ export_output_dir }}/compliance-reports-{{ ansible_date_time.epoch }}.zip
       {% endif %}
       - Summary: {{ export_output_dir }}/summary.txt
-      
-      🗑️  Archivos intermedios eliminados:
-      - Todos los archivos .bzip2, .bzip2.out y .xml han sido eliminados
-      - Solo se mantienen los reportes HTML finales para visualización
-      
-      💡 Nota: El directorio ahora contiene solo los archivos HTML necesarios para revisar el cumplimiento.
-

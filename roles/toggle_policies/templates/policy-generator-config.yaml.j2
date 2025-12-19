@@ -10,10 +10,10 @@ policyDefaults:
   placement:
     labelSelector:
       matchExpressions:
-        - key: environment
+        - key: {{ placement_label_key | default('environment') }}
           operator: In
           values:
-            - cluster-acs
+            - {{ placement_label_value | default('cluster-acs') }}
 
 policies:
   - name: install-compliance-operator

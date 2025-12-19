@@ -41,6 +41,8 @@
     _scan_remediation_action: "{{ _final_scan_remediation_action }}"
     _install_operator_remediation_action: "{{ _final_install_operator_remediation_action }}"
     gitops_repo_path: "{{ _final_gitops_repo_path }}"
+    placement_label_key: "{{ placement_label_key | default('environment') }}"
+    placement_label_value: "{{ placement_label_value | default('cluster-acs') }}"
 
 - name: Verificar si hay cambios pendientes de commit
   command: git status --porcelain

@@ -38,15 +38,47 @@
     run_pci: true
     scan_remediation_action: "inform"
     install_operator_remediation_action: "enforce"
+    
+    # =========================
+    # ACM Placement configuration (defaults)
+    # =========================
+    # Label selector para determinar en qué cluster(s) aplicar las políticas
+    # Ejemplo: placement_label_key=environment, placement_label_value=cluster-acs
+    placement_label_key: "environment"
+    placement_label_value: "cluster-acs"
+    
+    # =========================
+    # Cluster context for export (defaults)
+    # =========================
+    # Cuando se ejecuta desde el HUB, especificar el contexto del cluster objetivo
+    # Ejemplo: target_cluster_context=cluster-acs
+    # Si está vacío, se usa el contexto actual
+    target_cluster_context: ""
+    
+    # =========================
+    # Kubeconfig Secret Configuration (defaults)
+    # =========================
+    # Namespace donde se almacenan los secrets con kubeconfigs de managed clusters
+    # El playbook buscará automáticamente el secret: managed-cluster-kubeconfig-{target_cluster_context}
+    # en este namespace. Si no existe, usará fallback a archivos locales.
+    kubeconfig_secret_namespace: "openshift-compliance"
+    
+    # =========================
+    # Managed Cluster Kubeconfigs (defaults)
+    # =========================
+    # Diccionario con las rutas de los kubeconfigs de los managed clusters
+    # Formato: { "cluster-name": "/ruta/al/kubeconfig" }
+    # Ejemplo:
+    #   managed_cluster_kubeconfigs:
+    #     cluster-acs: "/tmp/kubeconfig-cluster-acs"
+    #     cluster-2: "/tmp/kubeconfig-cluster-2"
+    # Si no se especifica, se buscará en /tmp/kubeconfig-{target_cluster_context}
+    managed_cluster_kubeconfigs: {}
 
     # =========================
     # Export HTML configuration (defaults)
     # =========================
     export_output_dir: "/tmp/compliance-reports"
-    # target_cluster_context: contexto de oc para acceder a PVCs del cluster objetivo
-    # Ejemplo: "cluster-acs" cuando se ejecuta desde el HUB
-    # Dejar vacío si los PVCs están en el cluster actual
-    target_cluster_context: ""
 
     # =========================
     # Control flags (defaults)
@@ -66,7 +98,6 @@
         _scan_remediation_action: "{{ scan_remediation_action | default('inform') }}"
         _install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"
         _export_output_dir: "{{ export_output_dir | default('/tmp/compliance-reports') }}"
-        _target_cluster_context: "{{ target_cluster_context | default('') }}"
         _do_gitops: "{{ do_gitops | default(false) | bool }}"
         _do_export_html: "{{ do_export_html | default(false) | bool }}"
         _gitops_repo_url: "https://{{ github_user | default('Snakerrrr') }}:{{ github_token | default('') }}@github.com/{{ github_user | default('Snakerrrr') }}/acm-policies.git"
@@ -87,6 +118,8 @@
           run_cis: {{ _run_cis }}
           run_pci: {{ _run_pci }}
           scan_remediation_action: {{ _scan_remediation_action }}
+          placement_label: {{ placement_label_key | default('environment') }}={{ placement_label_value | default('cluster-acs') }}
+          target_cluster_context: {{ target_cluster_context | default('(contexto actual)') }}
           ========================================
 
     # ============================================================
@@ -112,13 +145,35 @@
             run_pci: "{{ _run_pci }}"
             scan_remediation_action: "{{ _scan_remediation_action }}"
             install_operator_remediation_action: "{{ _install_operator_remediation_action }}"
+            placement_label_key: "{{ placement_label_key | default('environment') }}"
+            placement_label_value: "{{ placement_label_value | default('cluster-acs') }}"
 
         - name: Informar que GitOps se completó
           debug:
             msg: "GitOps completado. ArgoCD sincronizará automáticamente los cambios."
 
     # ============================================================
-    # FASE 2: Export HTML (healthcheck informativo)
+    # FASE 2: Esperar instalación y completación (nuevos clusters)
+    # ============================================================
+    - name: Esperar instalación del operador y completación de scans
+      when: _do_gitops | bool and _do_export_html | bool
+      block:
+        - name: Ejecutar rol compliance_wait
+          include_role:
+            name: compliance_wait
+          vars:
+            target_cluster_context: "{{ target_cluster_context | default('') }}"
+            # Todas las variables de espera se establecen en el rol si no están definidas
+            # No usar default() aquí para evitar recursión
+            # scan_max_age_days: días máximos antes de reiniciar scans (default: 30)
+            # managed_cluster_kubeconfig_path se establece en el rol si no está definido
+
+        - name: Informar que la espera se completó
+          debug:
+            msg: "Espera completada. El operador está instalado y los scans han finalizado."
+
+    # ============================================================
+    # FASE 3: Export HTML (healthcheck informativo)
     # ============================================================
     - name: Ejecutar exportación HTML
       when: _do_export_html | bool
@@ -128,7 +183,9 @@
             name: compliance_export_html
           vars:
             export_output_dir: "{{ _export_output_dir }}"
-            target_cluster_context: "{{ _target_cluster_context }}"
+            target_cluster_context: "{{ target_cluster_context | default('') }}"
+            # managed_cluster_kubeconfigs se establece en el rol si no está definido
+            # No usar default() aquí para evitar recursión
 
         - name: Informar que exportación se completó
           debug:
