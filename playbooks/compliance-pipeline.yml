@@ -40,6 +40,15 @@
     install_operator_remediation_action: "enforce"
     
     # =========================
+    # ScanSetting configuration (defaults)
+    # =========================
+    # Schedule en formato cron para escaneos periódicos
+    # Ejemplo: "0 2 * * *" = Todos los días a las 2:00 AM (default)
+    # Ejemplo: "0 */6 * * *" = Cada 6 horas
+    scan_schedule: "0 2 * * *"
+    scan_setting_name: "periodic-daily"
+    
+    # =========================
     # ACM Placement configuration (defaults)
     # =========================
     # Label selector para determinar en qué cluster(s) aplicar las políticas
@@ -101,6 +110,8 @@
         _do_gitops: "{{ do_gitops | default(false) | bool }}"
         _do_export_html: "{{ do_export_html | default(false) | bool }}"
         _gitops_repo_url: "https://{{ github_user | default('Snakerrrr') }}:{{ github_token | default('') }}@github.com/{{ github_user | default('Snakerrrr') }}/acm-policies.git"
+        _scan_schedule: "0 1 * * *"
+        _scan_setting_name: default
 
     - name: Validar flags de control
       fail:
@@ -133,6 +144,20 @@
             msg: "github_token es requerido cuando do_gitops=true"
           when: _github_token == "" or github_token is not defined
 
+        - name: Actualizar scan_schedule si está definido
+          set_fact:
+            _scan_schedule: "{{ scan_schedule }}"
+          when: 
+            - scan_schedule is defined
+            - scan_schedule | length > 0
+
+        - name: Actualizar scan_setting_name si está definido
+          set_fact:
+            _scan_setting_name: "{{ scan_setting_name }}"
+          when: 
+            - scan_setting_name is defined
+            - scan_setting_name | length > 0
+
         - name: Ejecutar rol gitops_policy_update
           include_role:
             name: gitops_policy_update
@@ -147,6 +172,8 @@
             install_operator_remediation_action: "{{ _install_operator_remediation_action }}"
             placement_label_key: "{{ placement_label_key | default('environment') }}"
             placement_label_value: "{{ placement_label_value | default('cluster-acs') }}"
+            scan_schedule: "{{ _scan_schedule }}"
+            scan_setting_name: "{{ _scan_setting_name }}"
 
         - name: Informar que GitOps se completó
           debug:

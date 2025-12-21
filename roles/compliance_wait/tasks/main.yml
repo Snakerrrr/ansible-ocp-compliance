@@ -1,7 +1,8 @@
 ---
 # Rol: compliance_wait
-# Descripción: Espera a que el compliance-operator esté instalado y los ComplianceScans completen
+# Descripción: Espera a que el compliance-operator esté instalado (opcional)
 # Uso: Se ejecuta después de GitOps y antes de export HTML
+# NOTA: Los escaneos se ejecutan automáticamente según el schedule configurado en ScanSetting
 
 - name: Establecer variables iniciales básicas
   set_fact:
@@ -21,18 +22,12 @@
     _wait_timeout: "{{ wait_timeout if (wait_timeout is defined and wait_timeout != '') else 3600 }}"
     _wait_interval: "{{ wait_interval if (wait_interval is defined and wait_interval != '') else 30 }}"
     _wait_for_operator: "{{ wait_for_operator if (wait_for_operator is defined) else true }}"
-    _wait_for_scans: "{{ wait_for_scans if (wait_for_scans is defined) else true }}"
-    _expected_scans: "{{ expected_scans if (expected_scans is defined and expected_scans != []) else ['ocp4-cis', 'ocp4-pci-dss'] }}"
-    _scan_max_age_days: "{{ scan_max_age_days if (scan_max_age_days is defined and scan_max_age_days != '') else 30 }}"
 
 - name: Usar variables de espera establecidas
   set_fact:
     wait_timeout: "{{ _wait_timeout | int }}"
     wait_interval: "{{ _wait_interval | int }}"
     wait_for_operator: "{{ _wait_for_operator | bool }}"
-    wait_for_scans: "{{ _wait_for_scans | bool }}"
-    expected_scans: "{{ _expected_scans }}"
-    scan_max_age_days: "{{ _scan_max_age_days | int }}"
 
 - name: Obtener kubeconfig del managed cluster (si no se pasó explícitamente)
   when: 
@@ -82,14 +77,13 @@
       Cluster objetivo: {{ target_cluster_context if target_cluster_context != '' else '(contexto actual)' }}
       Namespace: {{ compliance_namespace }}
       Esperar operador: {{ wait_for_operator }}
-      Esperar scans: {{ wait_for_scans }}
-      Scans esperados: {{ expected_scans | join(', ') }}
-      Timeout: {{ wait_timeout }} segundos
-      Intervalo: {{ wait_interval }} segundos
+      ========================================
+      NOTA: Los escaneos se ejecutarán automáticamente según el schedule
+      configurado en ScanSetting. No es necesario esperar manualmente.
       ========================================
 
 # ============================================================
-# ESPERAR INSTALACIÓN DEL COMPLIANCE OPERATOR
+# ESPERAR INSTALACIÓN DEL COMPLIANCE OPERATOR (OPCIONAL)
 # ============================================================
 - name: Esperar instalación del Compliance Operator
   when: wait_for_operator | bool
@@ -199,352 +193,9 @@
       debug:
         msg: "✅ Compliance Operator instalado y funcionando en el namespace {{ compliance_namespace }}. {{ 'Detalles: ' + operator_status.stdout if (operator_status is defined and operator_status.stdout is defined and operator_status.stdout != '') else 'Verificado correctamente.' }}"
 
-# ============================================================
-# ESPERAR CREACIÓN Y COMPLETACIÓN DE COMPLIANCE SCANS
-# ============================================================
-- name: Esperar creación y completación de ComplianceScans
-  when: wait_for_scans | bool
-  block:
-    - name: Verificar estado de ComplianceSuites y antigüedad (si es necesario)
-      shell: |
-        SUITES_STATUS=""
-        CURRENT_TIME=$(date +%s)
-        MAX_AGE_DAYS={{ scan_max_age_days }}
-        MAX_AGE_SECONDS=$((MAX_AGE_DAYS * 24 * 60 * 60))
-        SUITES_TO_RESCAN=""
-        
-        # Buscar ComplianceSuites relacionadas con los scans esperados
-        SUITES=$(oc {{ oc_context_arg }} get compliancesuites -n {{ compliance_namespace }} -o jsonpath='{.items[*].metadata.name}' 2>&1 || echo "")
-        
-        if [ -z "$SUITES" ]; then
-          echo "no_suites"
-        else
-          ALL_DONE=true
-          for suite in $SUITES; do
-            PHASE=$(oc {{ oc_context_arg }} get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.status.phase}' 2>&1 || echo "PENDING")
-            if [ "$PHASE" != "DONE" ]; then
-              ALL_DONE=false
-              break
-            else
-              # Si está DONE, verificar antigüedad opcionalmente
-              CREATION_TIMESTAMP=$(oc {{ oc_context_arg }} get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.metadata.creationTimestamp}' 2>&1 || echo "")
-              if [ -n "$CREATION_TIMESTAMP" ]; then
-                CREATION_TIME=$(date -d "$CREATION_TIMESTAMP" +%s 2>/dev/null || echo "0")
-                if [ "$CREATION_TIME" != "0" ]; then
-                  AGE_SECONDS=$((CURRENT_TIME - CREATION_TIME))
-                  if [ $AGE_SECONDS -gt $MAX_AGE_SECONDS ]; then
-                    SUITES_TO_RESCAN="$SUITES_TO_RESCAN $suite"
-                  fi
-                fi
-              fi
-            fi
-          done
-          
-          if [ "$ALL_DONE" = "true" ] && [ -z "$SUITES_TO_RESCAN" ]; then
-            echo "all_done"
-          elif [ "$ALL_DONE" = "true" ] && [ -n "$SUITES_TO_RESCAN" ]; then
-            echo "done_but_old:$SUITES_TO_RESCAN" | xargs
-          else
-            echo "not_done"
-          fi
-        fi
-      register: suites_status_check
-      changed_when: false
-      failed_when: false
-      environment: "{{ oc_environment if (oc_environment is defined and oc_environment != {}) else {} }}"
-      when: target_cluster_context != ''
-
-    - name: Verificar estado de ComplianceSuites y antigüedad (contexto actual, si es necesario)
-      shell: |
-        SUITES_STATUS=""
-        CURRENT_TIME=$(date +%s)
-        MAX_AGE_DAYS={{ scan_max_age_days }}
-        MAX_AGE_SECONDS=$((MAX_AGE_DAYS * 24 * 60 * 60))
-        SUITES_TO_RESCAN=""
-        
-        # Buscar ComplianceSuites relacionadas con los scans esperados
-        SUITES=$(oc get compliancesuites -n {{ compliance_namespace }} -o jsonpath='{.items[*].metadata.name}' 2>&1 || echo "")
-        
-        if [ -z "$SUITES" ]; then
-          echo "no_suites"
-        else
-          ALL_DONE=true
-          for suite in $SUITES; do
-            PHASE=$(oc get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.status.phase}' 2>&1 || echo "PENDING")
-            if [ "$PHASE" != "DONE" ]; then
-              ALL_DONE=false
-              break
-            else
-              # Si está DONE, verificar antigüedad opcionalmente
-              CREATION_TIMESTAMP=$(oc get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.metadata.creationTimestamp}' 2>&1 || echo "")
-              if [ -n "$CREATION_TIMESTAMP" ]; then
-                CREATION_TIME=$(date -d "$CREATION_TIMESTAMP" +%s 2>/dev/null || echo "0")
-                if [ "$CREATION_TIME" != "0" ]; then
-                  AGE_SECONDS=$((CURRENT_TIME - CREATION_TIME))
-                  if [ $AGE_SECONDS -gt $MAX_AGE_SECONDS ]; then
-                    SUITES_TO_RESCAN="$SUITES_TO_RESCAN $suite"
-                  fi
-                fi
-              fi
-            fi
-          done
-          
-          if [ "$ALL_DONE" = "true" ] && [ -z "$SUITES_TO_RESCAN" ]; then
-            echo "all_done"
-          elif [ "$ALL_DONE" = "true" ] && [ -n "$SUITES_TO_RESCAN" ]; then
-            echo "done_but_old:$SUITES_TO_RESCAN" | xargs
-          else
-            echo "not_done"
-          fi
-        fi
-      register: suites_status_check
-      changed_when: false
-      failed_when: false
-      when: target_cluster_context == ''
-
-    - name: Forzar re-scan de ComplianceSuites antiguas usando anotaciones
-      shell: |
-        SUITES_LIST=$(echo "{{ suites_status_check.stdout }}" | sed 's/done_but_old://' | xargs)
-        if [ -n "$SUITES_LIST" ]; then
-          for suite in $SUITES_LIST; do
-            if [ -n "$suite" ]; then
-              echo "Agregando anotación de re-scan a suite: $suite"
-              oc {{ oc_context_arg }} annotate compliancesuite "$suite" -n {{ compliance_namespace }} compliance.openshift.io/rescan=$(date +%s) --overwrite 2>&1 || true
-            fi
-          done
-          echo "Anotaciones de re-scan agregadas. El operador actualizará los resultados en los mismos PVCs."
-        else
-          echo "No hay suites antiguas para re-scan."
-        fi
-      register: suites_rescanned
-      changed_when: suites_rescanned.stdout is defined and (suites_rescanned.stdout | regex_search('Agregando anotación'))
-      failed_when: false
-      environment: "{{ oc_environment if (oc_environment is defined and oc_environment != {}) else {} }}"
-      when: 
-        - target_cluster_context != ''
-        - suites_status_check.stdout is defined
-        - suites_status_check.stdout != ''
-        - suites_status_check.stdout | regex_search('done_but_old')
-
-    - name: Forzar re-scan de ComplianceSuites antiguas usando anotaciones (contexto actual)
-      shell: |
-        SUITES_LIST=$(echo "{{ suites_status_check.stdout }}" | sed 's/done_but_old://' | xargs)
-        if [ -n "$SUITES_LIST" ]; then
-          for suite in $SUITES_LIST; do
-            if [ -n "$suite" ]; then
-              echo "Agregando anotación de re-scan a suite: $suite"
-              oc annotate compliancesuite "$suite" -n {{ compliance_namespace }} compliance.openshift.io/rescan=$(date +%s) --overwrite 2>&1 || true
-            fi
-          done
-          echo "Anotaciones de re-scan agregadas. El operador actualizará los resultados en los mismos PVCs."
-        else
-          echo "No hay suites antiguas para re-scan."
-        fi
-      register: suites_rescanned
-      changed_when: suites_rescanned.stdout is defined and (suites_rescanned.stdout | regex_search('Agregando anotación'))
-      failed_when: false
-      when: 
-        - target_cluster_context == ''
-        - suites_status_check.stdout is defined
-        - suites_status_check.stdout != ''
-        - suites_status_check.stdout | regex_search('done_but_old')
-
-    - name: Informar sobre reinicio de scans antiguos
+    - name: Informar sobre escaneos periódicos
       debug:
-        msg: "🔄 Scans antiguos detectados y eliminados. Se crearán nuevos scans automáticamente: {{ scans_to_restart.stdout }}"
-      when:
-        - scans_to_restart.stdout is defined
-        - scans_to_restart.stdout != ''
-        - scans_to_restart.stdout | trim != ''
-
-    - name: Informar que ComplianceSuites están completas y son recientes
-      debug:
-        msg: "✅ ComplianceSuites están completas (DONE) y son recientes (menos de {{ scan_max_age_days }} días). Continuando sin esperar nuevos scans."
-      when:
-        - suites_status_check.stdout is defined
-        - suites_status_check.stdout == 'all_done'
-
-    - name: Informar que se forzó re-scan de ComplianceSuites antiguas
-      debug:
-        msg: "🔄 ComplianceSuites completas pero antiguas (más de {{ scan_max_age_days }} días). Se agregó anotación de re-scan. Esperando a que el operador actualice los resultados en los mismos PVCs."
-      when:
-        - suites_rescanned.stdout is defined
-        - suites_rescanned.stdout is defined
-        - suites_rescanned.stdout | regex_search('Agregando anotación')
-
-    - name: Esperar re-scan de ComplianceSuites después de agregar anotación
-      shell: |
-        ALL_SUITES_DONE=true
-        SUITES_LIST=$(echo "{{ suites_status_check.stdout }}" | sed 's/done_but_old://' | xargs)
-        for suite in $SUITES_LIST; do
-          if [ -n "$suite" ]; then
-            PHASE=$(oc {{ oc_context_arg }} get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.status.phase}' 2>&1 || echo "PENDING")
-            if [ "$PHASE" != "DONE" ]; then
-              ALL_SUITES_DONE=false
-              break
-            fi
-          fi
-        done
-        if [ "$ALL_SUITES_DONE" = "true" ]; then
-          echo "all_done"
-        else
-          echo "waiting"
-        fi
-      register: rescanned_suites_status
-      changed_when: false
-      failed_when: false
-      until: rescanned_suites_status.stdout == "all_done"
-      retries: "{{ ((wait_timeout | int) / (wait_interval | int)) | int }}"
-      delay: "{{ wait_interval | int }}"
-      environment: "{{ oc_environment if (oc_environment is defined and oc_environment != {}) else {} }}"
-      when: 
-        - target_cluster_context != ''
-        - suites_rescanned.stdout is defined
-        - suites_rescanned.stdout is defined
-        - suites_rescanned.stdout | regex_search('Agregando anotación')
-
-    - name: Esperar re-scan de ComplianceSuites después de agregar anotación (contexto actual)
-      shell: |
-        ALL_SUITES_DONE=true
-        SUITES_LIST=$(echo "{{ suites_status_check.stdout }}" | sed 's/done_but_old://' | xargs)
-        for suite in $SUITES_LIST; do
-          if [ -n "$suite" ]; then
-            PHASE=$(oc get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.status.phase}' 2>&1 || echo "PENDING")
-            if [ "$PHASE" != "DONE" ]; then
-              ALL_SUITES_DONE=false
-              break
-            fi
-          fi
-        done
-        if [ "$ALL_SUITES_DONE" = "true" ]; then
-          echo "all_done"
-        else
-          echo "waiting"
-        fi
-      register: rescanned_suites_status
-      changed_when: false
-      failed_when: false
-      until: rescanned_suites_status.stdout == "all_done"
-      retries: "{{ ((wait_timeout | int) / (wait_interval | int)) | int }}"
-      delay: "{{ wait_interval | int }}"
-      when: 
-        - target_cluster_context == ''
-        - suites_rescanned.stdout is defined
-        - suites_rescanned.stdout is defined
-        - suites_rescanned.stdout | regex_search('Agregando anotación')
-
-    - name: Esperar completación de ComplianceSuites (solo si no están DONE y no se forzó re-scan)
-      shell: |
-        ALL_SUITES_DONE=true
-        SUITES=$(oc {{ oc_context_arg }} get compliancesuites -n {{ compliance_namespace }} -o jsonpath='{.items[*].metadata.name}' 2>&1 || echo "")
-        if [ -z "$SUITES" ]; then
-          ALL_SUITES_DONE=false
-        else
-          for suite in $SUITES; do
-            PHASE=$(oc {{ oc_context_arg }} get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.status.phase}' 2>&1 || echo "PENDING")
-            if [ "$PHASE" != "DONE" ]; then
-              ALL_SUITES_DONE=false
-              break
-            fi
-          done
-        fi
-        if [ "$ALL_SUITES_DONE" = "true" ]; then
-          echo "all_done"
-        else
-          echo "waiting"
-        fi
-      register: suites_completion_status
-      changed_when: false
-      failed_when: false
-      until: suites_completion_status.stdout == "all_done"
-      retries: "{{ ((wait_timeout | int) / (wait_interval | int)) | int }}"
-      delay: "{{ wait_interval | int }}"
-      environment: "{{ oc_environment if (oc_environment is defined and oc_environment != {}) else {} }}"
-      when: 
-        - target_cluster_context != ''
-        - suites_status_check.stdout is defined
-        - suites_status_check.stdout != ''
-        - suites_status_check.stdout != 'all_done'
-        - suites_status_check.stdout != 'done_but_old'
-        - not (suites_rescanned.stdout is defined and (suites_rescanned.stdout | regex_search('Agregando anotación')))
-
-    - name: Esperar completación de ComplianceSuites (contexto actual, solo si no están DONE y no se forzó re-scan)
-      shell: |
-        ALL_SUITES_DONE=true
-        SUITES=$(oc get compliancesuites -n {{ compliance_namespace }} -o jsonpath='{.items[*].metadata.name}' 2>&1 || echo "")
-        if [ -z "$SUITES" ]; then
-          ALL_SUITES_DONE=false
-        else
-          for suite in $SUITES; do
-            PHASE=$(oc get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.status.phase}' 2>&1 || echo "PENDING")
-            if [ "$PHASE" != "DONE" ]; then
-              ALL_SUITES_DONE=false
-              break
-            fi
-          done
-        fi
-        if [ "$ALL_SUITES_DONE" = "true" ]; then
-          echo "all_done"
-        else
-          echo "waiting"
-        fi
-      register: suites_completion_status
-      changed_when: false
-      failed_when: false
-      until: suites_completion_status.stdout == "all_done"
-      retries: "{{ ((wait_timeout | int) / (wait_interval | int)) | int }}"
-      delay: "{{ wait_interval | int }}"
-      when: 
-        - target_cluster_context == ''
-        - suites_status_check.stdout is defined
-        - suites_status_check.stdout != ''
-        - suites_status_check.stdout != 'all_done'
-        - suites_status_check.stdout != 'done_but_old'
-        - not (suites_rescanned.stdout is defined and (suites_rescanned.stdout | regex_search('Agregando anotación')))
-
-    - name: Mostrar estado final de ComplianceSuites
-      shell: |
-        echo "=== Estado de ComplianceSuites ==="
-        SUITES=$(oc {{ oc_context_arg }} get compliancesuites -n {{ compliance_namespace }} -o jsonpath='{.items[*].metadata.name}' 2>&1 || echo "")
-        if [ -n "$SUITES" ]; then
-          for suite in $SUITES; do
-            PHASE=$(oc {{ oc_context_arg }} get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.status.phase}' 2>&1 || echo "UNKNOWN")
-            RESULT=$(oc {{ oc_context_arg }} get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.status.result}' 2>&1 || echo "UNKNOWN")
-            echo "$suite: PHASE=$PHASE, RESULT=$RESULT"
-          done
-        else
-          echo "No hay ComplianceSuites encontradas"
-        fi
-      register: suites_final_status
-      changed_when: false
-      failed_when: false
-      environment: "{{ oc_environment if (oc_environment is defined and oc_environment != {}) else {} }}"
-      when: target_cluster_context != ''
-
-    - name: Mostrar estado final de ComplianceSuites (contexto actual)
-      shell: |
-        echo "=== Estado de ComplianceSuites ==="
-        SUITES=$(oc get compliancesuites -n {{ compliance_namespace }} -o jsonpath='{.items[*].metadata.name}' 2>&1 || echo "")
-        if [ -n "$SUITES" ]; then
-          for suite in $SUITES; do
-            PHASE=$(oc get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.status.phase}' 2>&1 || echo "UNKNOWN")
-            RESULT=$(oc get compliancesuite "$suite" -n {{ compliance_namespace }} -o jsonpath='{.status.result}' 2>&1 || echo "UNKNOWN")
-            echo "$suite: PHASE=$PHASE, RESULT=$RESULT"
-          done
-        else
-          echo "No hay ComplianceSuites encontradas"
-        fi
-      register: suites_final_status
-      changed_when: false
-      failed_when: false
-      when: target_cluster_context == ''
-
-    - name: Mostrar resumen de ComplianceSuites
-      debug:
-        msg: "{{ suites_final_status.stdout | default('No se pudo obtener el estado de ComplianceSuites') }}"
-      when: suites_final_status is defined and suites_final_status.stdout is defined
-
-    - name: Informar que las ComplianceSuites completaron
-      debug:
-        msg: "✅ Todas las ComplianceSuites completaron su ejecución. Los PVCs deberían estar listos para exportar."
-
+        msg: |
+          ℹ️  Los escaneos de compliance se ejecutarán automáticamente según el schedule configurado en ScanSetting.
+          No es necesario esperar manualmente a que completen, ya que se ejecutarán de forma periódica.
+          Los resultados estarán disponibles en los PVCs cuando se ejecute el export HTML.

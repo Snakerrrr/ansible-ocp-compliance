@@ -18,3 +18,111 @@
     dest: "{{ gitops_repo_path }}/base/policy-generator-config.yaml"
     mode: '0644'
 
+- name: Establecer valores por defecto para ScanSetting (sin recursión)
+  set_fact:
+    _scan_setting_compliance_namespace: openshift-compliance
+    _scan_setting_name: periodic-daily
+    _scan_setting_schedule: "0 2 * * *"
+
+- name: Actualizar valores de ScanSetting si están definidos
+  set_fact:
+    _scan_setting_compliance_namespace: "{{ compliance_namespace }}"
+  when: 
+    - compliance_namespace is defined
+    - compliance_namespace | length > 0
+
+- name: Actualizar scan_setting_name si está definido
+  set_fact:
+    _scan_setting_name: "{{ scan_setting_name }}"
+  when: 
+    - scan_setting_name is defined
+    - scan_setting_name | length > 0
+
+- name: Actualizar scan_schedule si está definido
+  set_fact:
+    _scan_setting_schedule: "{{ scan_schedule }}"
+  when: 
+    - scan_schedule is defined
+    - scan_schedule | length > 0
+
+- name: Crear directorio para ScanSetting si no existe
+  file:
+    path: "{{ gitops_repo_path }}/base/compliance-operator/scan-setting"
+    state: directory
+    mode: '0755'
+
+- name: Renderizar scan-setting.yaml desde template
+  template:
+    src: scan-setting.yaml.j2
+    dest: "{{ gitops_repo_path }}/base/compliance-operator/scan-setting/scan-setting.yaml"
+    mode: '0644'
+  vars:
+    compliance_namespace: "{{ _scan_setting_compliance_namespace }}"
+    scan_setting_name: "{{ _scan_setting_name }}"
+    scan_schedule: "{{ _scan_setting_schedule }}"
+
+- name: Buscar archivos ScanSettingBinding en el repositorio
+  find:
+    paths: "{{ gitops_repo_path }}/base/compliance-operator"
+    patterns: "*.yaml,*.yml"
+    contains: "kind: ScanSettingBinding"
+    recurse: true
+  register: scan_setting_binding_files
+  changed_when: false
+
+- name: Verificar que los archivos contienen settingsRef con name default
+  shell: |
+    if grep -q "settingsRef:" "{{ item.path }}" && grep -q "name: default" "{{ item.path }}"; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  loop: "{{ scan_setting_binding_files.files | default([]) }}"
+  when: 
+    - scan_setting_binding_files.files is defined
+    - scan_setting_binding_files.files | length > 0
+    - item.path is defined
+  register: files_to_update
+  changed_when: false
+
+- name: Actualizar settingsRef.name en archivos ScanSettingBinding
+  replace:
+    path: "{{ item.item.path }}"
+    # Busca la línea que contiene "name: default" (debe estar dentro de settingsRef)
+    # El patrón busca: espacios + name: + espacios + default + posible comentario al final
+    regexp: '^(\s+name:\s+)(default)(\s*(#.*)?)?$'
+    replace: '\1{{ _scan_setting_name }}\3'
+  loop: "{{ files_to_update.results | default([]) }}"
+  when: 
+    - files_to_update.results is defined
+    - item.stdout == "true"
+  vars:
+    _scan_setting_name: "{{ _scan_setting_name }}"
+  no_log: false
+
+- name: Verificar que se actualizó correctamente
+  shell: |
+    if grep -q "name: {{ _scan_setting_name }}" "{{ item.path }}"; then
+      echo "OK: settingsRef.name actualizado correctamente a {{ _scan_setting_name }} en {{ item.path | basename }}"
+    else
+      echo "WARNING: No se encontró el valor esperado {{ _scan_setting_name }} en {{ item.path | basename }}"
+      echo "Contenido actual del archivo:"
+      grep -A 2 "settingsRef:" "{{ item.path }}" || cat "{{ item.path }}"
+    fi
+  loop: "{{ scan_setting_binding_files.files | default([]) }}"
+  when: 
+    - scan_setting_binding_files.files is defined
+    - scan_setting_binding_files.files | length > 0
+    - item.path is defined
+  vars:
+    _scan_setting_name: "{{ _scan_setting_name }}"
+  changed_when: false
+  failed_when: false
+
+- name: Informar si no se encontraron archivos ScanSettingBinding
+  debug:
+    msg: "No se encontraron archivos ScanSettingBinding para actualizar. Esto es normal si los bindings están en otra ubicación o aún no existen."
+  when: 
+    - scan_setting_binding_files.files is defined
+    - scan_setting_binding_files.files | length == 0
+

@@ -22,6 +22,12 @@ policies:
     manifests:
       - path: compliance-operator/install
 
+  - name: scan-setting-periodic
+    remediationAction: {{ _scan_remediation_action }}
+    disabled: false
+    manifests:
+      - path: compliance-operator/scan-setting
+
   - name: run-cis-scan
     remediationAction: {{ _scan_remediation_action }}
     disabled: {{ 'false' if run_cis else 'true' }}

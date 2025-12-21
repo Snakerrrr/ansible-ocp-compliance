@@ -19,6 +19,8 @@
     _final_install_operator_remediation_action: "{{ install_operator_remediation_action if (install_operator_remediation_action is defined and install_operator_remediation_action != '') else 'enforce' }}"
     _final_gitops_repo_path: "{{ gitops_repo_path if (gitops_repo_path is defined and gitops_repo_path != '') else '/tmp/acm-policies' }}"
     _final_gitops_repo_branch: "{{ gitops_repo_branch if (gitops_repo_branch is defined and gitops_repo_branch != '') else 'main' }}"
+    _final_scan_schedule: "0 1 * * *"
+    _final_scan_setting_name: default
 
 - name: Establecer valores booleanos para run_cis y run_pci
   set_fact:
@@ -32,6 +34,20 @@
     version: "{{ _final_gitops_repo_branch }}"
     force: true
 
+- name: Actualizar scan_schedule si está definido
+  set_fact:
+    _final_scan_schedule: "{{ scan_schedule }}"
+  when: 
+    - scan_schedule is defined
+    - scan_schedule | length > 0
+
+- name: Actualizar scan_setting_name si está definido
+  set_fact:
+    _final_scan_setting_name: "{{ scan_setting_name }}"
+  when: 
+    - scan_setting_name is defined
+    - scan_setting_name | length > 0
+
 - name: Renderizar policy-generator-config.yaml vía toggle_policies
   include_role:
     name: toggle_policies
@@ -43,6 +59,8 @@
     gitops_repo_path: "{{ _final_gitops_repo_path }}"
     placement_label_key: "{{ placement_label_key | default('environment') }}"
     placement_label_value: "{{ placement_label_value | default('cluster-acs') }}"
+    scan_schedule: "{{ _final_scan_schedule }}"
+    scan_setting_name: "{{ _final_scan_setting_name }}"
 
 - name: Verificar si hay cambios pendientes de commit
   command: git status --porcelain
