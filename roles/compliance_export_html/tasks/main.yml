@@ -31,6 +31,11 @@
   set_fact:
     acm_secret_names: "{{ ['admin-kubeconfig', managed_cluster_name + '-import', managed_cluster_name + '-bootstrap-sa-token'] }}"
 
+- name: Construir patrón de búsqueda para el secret
+  set_fact:
+    secret_pattern: "secret/{{ managed_cluster_name }}-import"
+  when: target_cluster_context != ''
+
 - name: Verificar si el secret cluster-import existe
   shell: |
     oc get secret {{ managed_cluster_name }}-import -n {{ managed_cluster_name }} -o name 2>&1 || echo "NOT_FOUND"
@@ -53,7 +58,7 @@
       ========================================
       DEBUG: Verificación de Secret cluster-import
       ========================================
-      Secret existe: {{ 'Sí' if (secret_check.stdout is defined and secret_check.stdout != 'NOT_FOUND' and secret_check.stdout | regex_search('secret/')) else 'No' }}
+      Secret existe: {{ 'Sí' if (secret_check.stdout is defined and secret_check.stdout != 'NOT_FOUND' and secret_check.stdout | regex_search(secret_pattern | default('secret/'))) else 'No' }}
       Salida del secret check: {{ secret_check.stdout | default('No definido') }}
       Longitud de import.yaml: {{ import_yaml_raw.stdout | default('') | length }}
       ¿Está vacía?: {{ 'Sí' if (import_yaml_raw.stdout | default('') == '') else 'No' }}
@@ -73,7 +78,8 @@
   when:
     - target_cluster_context != ''
     - secret_check.stdout is defined
-    - (secret_check.stdout == "NOT_FOUND" or (secret_check.stdout | regex_search('secret/{{ managed_cluster_name }}-import')) == false)
+    - secret_pattern is defined
+    - (secret_check.stdout == "NOT_FOUND" or (secret_check.stdout | regex_search(secret_pattern)) == false)
 
 - name: Advertir si el secret cluster-import está vacío (continuará con admin-kubeconfig)
   debug:
@@ -84,7 +90,8 @@
   when:
     - target_cluster_context != ''
     - secret_check.stdout is defined
-    - secret_check.stdout | regex_search('secret/{{ managed_cluster_name }}-import')
+    - secret_pattern is defined
+    - secret_check.stdout | regex_search(secret_pattern)
     - import_yaml_raw.stdout is defined
     - import_yaml_raw.stdout | length < 100
 
