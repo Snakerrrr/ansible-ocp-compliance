@@ -68,7 +68,7 @@
       ========================================
       DEBUG: Verificación de Secret cluster-import
       ========================================
-      Secret existe: {{ 'Sí' if (secret_check.stdout is defined and secret_check.stdout != 'NOT_FOUND' and 'secret/' in secret_check.stdout) else 'No' }}
+      Secret existe: {{ 'Sí' if (secret_check.stdout is defined and secret_check.stdout != 'NOT_FOUND' and secret_check.stdout | regex_search('secret/')) else 'No' }}
       Salida del secret check: {{ secret_check.stdout | default('No definido') }}
       Longitud de import.yaml: {{ import_yaml_raw.stdout | default('') | length }}
       ¿Está vacía?: {{ 'Sí' if (import_yaml_raw.stdout | default('') == '') else 'No' }}
@@ -88,7 +88,7 @@
   when:
     - target_cluster_context != ''
     - secret_check.stdout is defined
-    - (secret_check.stdout == "NOT_FOUND" or "secret/{{ managed_cluster_name }}-import" not in secret_check.stdout)
+    - (secret_check.stdout == "NOT_FOUND" or (secret_check.stdout | regex_search('secret/{{ managed_cluster_name }}-import')) == false)
 
 - name: Advertir si el secret cluster-import está vacío (continuará con admin-kubeconfig)
   debug:
@@ -99,7 +99,7 @@
   when:
     - target_cluster_context != ''
     - secret_check.stdout is defined
-    - "secret/{{ managed_cluster_name }}-import" in secret_check.stdout
+    - secret_check.stdout | regex_search('secret/{{ managed_cluster_name }}-import')
     - import_yaml_raw.stdout is defined
     - import_yaml_raw.stdout | length < 100
 
@@ -191,7 +191,9 @@
   when:
     - target_cluster_context != ''
     - managed_cluster_kubeconfig_path != ''
-    - kubeconfig_source not in ['acm_native', 'custom']
+    - kubeconfig_source is defined
+    - kubeconfig_source != 'acm_native'
+    - kubeconfig_source != 'custom'
 
 - name: Verificar validez del kubeconfig
   shell: |
