@@ -41,22 +41,7 @@
 
 - name: Obtener import.yaml del secret cluster-import
   shell: |
-    SECRET_NAME="{{ managed_cluster_name }}-import"
-    NAMESPACE="{{ managed_cluster_name }}"
-    
-    # Verificar si el secret existe y tiene el campo import.yaml
-    SECRET_EXISTS=$(oc get secret "$SECRET_NAME" -n "$NAMESPACE" -o name 2>&1)
-    if [ $? -eq 0 ] && [ -n "$SECRET_EXISTS" ]; then
-      # Intentar obtener el campo import.yaml
-      SECRET_DATA=$(oc get secret "$SECRET_NAME" -n "$NAMESPACE" -o jsonpath='{.data.import\.yaml}' 2>&1)
-      if [ -n "$SECRET_DATA" ] && [ "$SECRET_DATA" != "" ] && [ ${#SECRET_DATA} -gt 10 ]; then
-        echo "$SECRET_DATA" | base64 -d 2>/dev/null || echo ""
-      else
-        echo ""
-      fi
-    else
-      echo ""
-    fi
+    oc get secret {{ managed_cluster_name }}-import -n {{ managed_cluster_name }} -o jsonpath='{.data.import\.yaml}' 2>&1 | base64 -d || echo ""
   register: import_yaml_raw
   changed_when: false
   failed_when: false
