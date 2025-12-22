@@ -1,0 +1,71 @@
+---
+- name: Orquestador Multi-Cluster AAP (Compliance)
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    # --- Variables que vendrán de la Survey de AAP ---
+    # survey_target_clusters: ["cluster-acs", "cluster-2"]
+    # do_gitops: false
+    # do_export_html: true
+
+    # --- Defaults para evitar fallos si no se definen en AAP ---
+    export_output_dir: "/tmp/compliance-reports"
+    survey_target_clusters: []
+
+  tasks:
+    # ---------------------------------------------------------
+    # 1. Normalización de Datos (Sanitización)
+    # ---------------------------------------------------------
+    - name: Normalizar lista de clusters desde AAP
+      set_fact:
+        # AAP a veces envía la lista como string separado por comas o saltos de línea
+        # Esto asegura que siempre tengamos una lista válida de Python
+        target_clusters_list: "{{ survey_target_clusters if survey_target_clusters is list else survey_target_clusters.split('\n') }}"
+
+    - name: Mostrar plan de ejecución
+      debug:
+        msg: |
+          🚀 Iniciando Orquestación Multi-Cluster
+          =======================================
+          Clusters seleccionados: {{ target_clusters_list }}
+          GitOps Activado: {{ do_gitops | default(false) }}
+          Export HTML Activado: {{ do_export_html | default(true) }}
+
+    # ---------------------------------------------------------
+    # 2. FASE GITOPS (Se ejecuta UNA vez al inicio)
+    # ---------------------------------------------------------
+    - name: Ejecutar Fase GitOps (Configuración Global)
+      include_role:
+        name: gitops_policy_update
+      vars:
+        # Pasa tus variables necesarias para GitOps aquí
+        github_token: "{{ github_token | default('') }}"
+        # ... otras variables que requiera tu rol
+      when: do_gitops | default(false) | bool
+
+    # ---------------------------------------------------------
+    # 3. FASE EXTRACCIÓN (Bucle por cada Cluster)
+    # ---------------------------------------------------------
+    - name: "Procesando extracción para {{ item }}"
+      include_role:
+        name: compliance_export_html
+      vars:
+        # INYECCIÓN DINÁMICA DE CONTEXTO
+        target_cluster_context: "{{ item }}"
+        # Forzamos la creación de subcarpetas para no sobrescribir
+        export_output_dir: "/tmp/compliance-reports/{{ item }}"
+      loop: "{{ target_clusters_list }}"
+      loop_control:
+        loop_var: item
+        label: "Cluster: {{ item }}"
+      when: do_export_html | default(true) | bool
+      # RESILIENCIA: Si falla un cluster, sigue con el siguiente
+      ignore_errors: true
+
+    # ---------------------------------------------------------
+    # 4. RESUMEN FINAL
+    # ---------------------------------------------------------
+    - name: Resumen de ubicación de reportes
+      debug:
+        msg: "✅ Los reportes se han guardado en: /tmp/compliance-reports/<nombre-cluster>/"

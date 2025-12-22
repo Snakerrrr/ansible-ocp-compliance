@@ -52,9 +52,12 @@
     # ACM Placement configuration (defaults)
     # =========================
     # Label selector para determinar en qué cluster(s) aplicar las políticas
-    # Ejemplo: placement_label_key=environment, placement_label_value=cluster-acs
-    placement_label_key: "environment"
-    placement_label_value: "cluster-acs"
+    # Por defecto usa: compliance=enabled (mejor práctica - etiqueta funcional)
+    # Ejemplo alternativo: placement_label_key=environment, placement_label_value=cluster-acs
+    placement_label_key: "compliance"
+    placement_label_value: "enabled"
+    # Usar matchLabels (más simple) en lugar de matchExpressions por defecto
+    placement_use_matchlabels: true
     
     # =========================
     # Cluster context for export (defaults)
@@ -106,17 +109,47 @@
         _run_pci: "{{ run_pci if run_pci is defined else true }}"
         _scan_remediation_action: "{{ scan_remediation_action | default('inform') }}"
         _install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"
-        _export_output_dir: "{{ export_output_dir | default('/tmp/compliance-reports') }}"
         _do_gitops: "{{ do_gitops | default(false) | bool }}"
         _do_export_html: "{{ do_export_html | default(false) | bool }}"
         _gitops_repo_url: "https://{{ github_user | default('Snakerrrr') }}:{{ github_token | default('') }}@github.com/{{ github_user | default('Snakerrrr') }}/acm-policies.git"
         _scan_schedule: "0 1 * * *"
         _scan_setting_name: default
+        _placement_label_key: compliance
+        _placement_label_value: enabled
+        _placement_use_matchlabels: true
+
+    - name: Actualizar placement_label_key si está definido
+      set_fact:
+        _placement_label_key: "{{ placement_label_key }}"
+      when:
+        - placement_label_key is defined
+        - placement_label_key | length > 0
+
+    - name: Actualizar placement_label_value si está definido
+      set_fact:
+        _placement_label_value: "{{ placement_label_value }}"
+      when:
+        - placement_label_value is defined
+        - placement_label_value | length > 0
+
+    - name: Actualizar placement_use_matchlabels si está definido
+      set_fact:
+        _placement_use_matchlabels: "{{ placement_use_matchlabels | bool }}"
+      when: placement_use_matchlabels is defined
+
+    - name: Establecer directorio de salida con nombre de cluster (multicluster)
+      set_fact:
+        _export_output_dir: "{{ (export_output_dir | default('/tmp/compliance-reports')) + '/' + target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else (export_output_dir | default('/tmp/compliance-reports')) }}"
 
     - name: Validar flags de control
       fail:
         msg: "Al menos uno de los flags debe estar activado: do_gitops o do_export_html"
       when: not _do_gitops and not _do_export_html
+
+    - name: Determinar ambiente/cluster actual
+      set_fact:
+        _current_cluster: "{{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else 'HUB (contexto actual)' }}"
+        _current_context: "{{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else 'default' }}"
 
     - name: Mostrar configuración del pipeline
       debug:
@@ -124,13 +157,14 @@
           ========================================
           Configuración del Compliance Pipeline
           ========================================
+          🌍 Ambiente/Cluster: {{ _current_cluster }}
           do_gitops: {{ _do_gitops }}
           do_export_html: {{ _do_export_html }}
           run_cis: {{ _run_cis }}
           run_pci: {{ _run_pci }}
           scan_remediation_action: {{ _scan_remediation_action }}
-          placement_label: {{ placement_label_key | default('environment') }}={{ placement_label_value | default('cluster-acs') }}
-          target_cluster_context: {{ target_cluster_context | default('(contexto actual)') }}
+          placement_label: {{ _placement_label_key }}={{ _placement_label_value }}
+          target_cluster_context: {{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else '(contexto actual - HUB)' }}
           ========================================
 
     # ============================================================
@@ -170,8 +204,9 @@
             run_pci: "{{ _run_pci }}"
             scan_remediation_action: "{{ _scan_remediation_action }}"
             install_operator_remediation_action: "{{ _install_operator_remediation_action }}"
-            placement_label_key: "{{ placement_label_key | default('environment') }}"
-            placement_label_value: "{{ placement_label_value | default('cluster-acs') }}"
+            placement_label_key: "{{ _placement_label_key }}"
+            placement_label_value: "{{ _placement_label_value }}"
+            placement_use_matchlabels: "{{ _placement_use_matchlabels }}"
             scan_schedule: "{{ _scan_schedule }}"
             scan_setting_name: "{{ _scan_setting_name }}"
 
@@ -185,11 +220,15 @@
     - name: Esperar instalación del operador y completación de scans
       when: _do_gitops | bool and _do_export_html | bool
       block:
+        - name: Establecer target_cluster_context para compliance_wait (sin recursión)
+          set_fact:
+            _compliance_wait_target_cluster_context: "{{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else '' }}"
+
         - name: Ejecutar rol compliance_wait
           include_role:
             name: compliance_wait
           vars:
-            target_cluster_context: "{{ target_cluster_context | default('') }}"
+            target_cluster_context: "{{ _compliance_wait_target_cluster_context }}"
             # Todas las variables de espera se establecen en el rol si no están definidas
             # No usar default() aquí para evitar recursión
             # scan_max_age_days: días máximos antes de reiniciar scans (default: 30)
@@ -205,12 +244,16 @@
     - name: Ejecutar exportación HTML
       when: _do_export_html | bool
       block:
+        - name: Establecer target_cluster_context para compliance_export_html (sin recursión)
+          set_fact:
+            _export_html_target_cluster_context: "{{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else '' }}"
+
         - name: Ejecutar rol compliance_export_html
           include_role:
             name: compliance_export_html
           vars:
             export_output_dir: "{{ _export_output_dir }}"
-            target_cluster_context: "{{ target_cluster_context | default('') }}"
+            target_cluster_context: "{{ _export_html_target_cluster_context }}"
             # managed_cluster_kubeconfigs se establece en el rol si no está definido
             # No usar default() aquí para evitar recursión
 
