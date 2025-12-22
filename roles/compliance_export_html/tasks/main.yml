@@ -31,9 +31,32 @@
   set_fact:
     acm_secret_names: "{{ ['admin-kubeconfig', managed_cluster_name + '-import', managed_cluster_name + '-bootstrap-sa-token'] }}"
 
+- name: Verificar si el secret cluster-import existe
+  shell: |
+    oc get secret {{ managed_cluster_name }}-import -n {{ managed_cluster_name }} -o name 2>&1 || echo "NOT_FOUND"
+  register: secret_check
+  changed_when: false
+  failed_when: false
+  when: target_cluster_context != ''
+
 - name: Obtener import.yaml del secret cluster-import
   shell: |
-    oc get secret {{ managed_cluster_name }}-import -n {{ managed_cluster_name }} -o jsonpath='{.data.import\.yaml}' 2>&1 | base64 -d || echo ""
+    SECRET_NAME="{{ managed_cluster_name }}-import"
+    NAMESPACE="{{ managed_cluster_name }}"
+    
+    # Verificar si el secret existe y tiene el campo import.yaml
+    SECRET_EXISTS=$(oc get secret "$SECRET_NAME" -n "$NAMESPACE" -o name 2>&1)
+    if [ $? -eq 0 ] && [ -n "$SECRET_EXISTS" ]; then
+      # Intentar obtener el campo import.yaml
+      SECRET_DATA=$(oc get secret "$SECRET_NAME" -n "$NAMESPACE" -o jsonpath='{.data.import\.yaml}' 2>&1)
+      if [ -n "$SECRET_DATA" ] && [ "$SECRET_DATA" != "" ] && [ ${#SECRET_DATA} -gt 10 ]; then
+        echo "$SECRET_DATA" | base64 -d 2>/dev/null || echo ""
+      else
+        echo ""
+      fi
+    else
+      echo ""
+    fi
   register: import_yaml_raw
   changed_when: false
   failed_when: false
@@ -41,16 +64,44 @@
 
 - name: DEBUG - Verificar si se encontró el import.yaml
   debug:
-    msg:
-      - "Comando ejecutado exitosamente."
-      - "¿Está vacía la salida?: {{ import_yaml_raw.stdout == '' }}"
-      - "Longitud de los datos encontrados: {{ import_yaml_raw.stdout | length }}"
-      # No imprimimos el contenido completo para no ensuciar el log con binarios
+    msg: |
+      ========================================
+      DEBUG: Verificación de Secret cluster-import
+      ========================================
+      Secret existe: {{ 'Sí' if (secret_check.stdout is defined and secret_check.stdout != 'NOT_FOUND' and 'secret/' in secret_check.stdout) else 'No' }}
+      Salida del secret check: {{ secret_check.stdout | default('No definido') }}
+      Longitud de import.yaml: {{ import_yaml_raw.stdout | default('') | length }}
+      ¿Está vacía?: {{ 'Sí' if (import_yaml_raw.stdout | default('') == '') else 'No' }}
+      ========================================
+  when: target_cluster_context != ''
 
-- name: Fallar si no se encontró el secreto
-  fail:
-    msg: "❌ No se pudo obtener el secret '{{ managed_cluster_name }}-import'. Verifica que el AAP tenga permisos en el namespace '{{ managed_cluster_name }}' en el Hub."
-  when: import_yaml_raw.stdout | length < 10
+- name: Advertir si el secret cluster-import no existe (continuará con admin-kubeconfig)
+  debug:
+    msg: |
+      ⚠️  El secret '{{ managed_cluster_name }}-import' no existe o no es accesible.
+      Continuando con el fallback a 'admin-kubeconfig' que tiene prioridad.
+      
+      Si necesitas usar cluster-import, verifica:
+      1. Que el namespace '{{ managed_cluster_name }}' existe en el Hub
+      2. Que el secret existe: oc get secret {{ managed_cluster_name }}-import -n {{ managed_cluster_name }}
+      3. Que el AAP tiene permisos para leer secrets en ese namespace
+  when:
+    - target_cluster_context != ''
+    - secret_check.stdout is defined
+    - (secret_check.stdout == "NOT_FOUND" or "secret/{{ managed_cluster_name }}-import" not in secret_check.stdout)
+
+- name: Advertir si el secret cluster-import está vacío (continuará con admin-kubeconfig)
+  debug:
+    msg: |
+      ⚠️  El secret '{{ managed_cluster_name }}-import' existe pero está vacío o no tiene contenido válido.
+      Longitud del contenido: {{ import_yaml_raw.stdout | default('') | length }} caracteres (esperado > 100)
+      Continuando con el fallback a 'admin-kubeconfig' que tiene prioridad.
+  when:
+    - target_cluster_context != ''
+    - secret_check.stdout is defined
+    - "secret/{{ managed_cluster_name }}-import" in secret_check.stdout
+    - import_yaml_raw.stdout is defined
+    - import_yaml_raw.stdout | length < 100
 
 - name: Establecer ruta del archivo temporal import.yaml
   set_fact:
