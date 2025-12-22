@@ -21,8 +21,7 @@
       set_fact:
         # AAP a veces envía la lista como string separado por comas o saltos de línea
         # Esto asegura que siempre tengamos una lista válida de Python
-        target_clusters_list: "{{ survey_target_clusters if survey_target_clusters is list else survey_target_clusters.split('\n') }}"
-
+        target_clusters_list: "{{ survey_target_clusters.split('\n') if survey_target_clusters is string else survey_target_clusters }}"
     - name: Mostrar plan de ejecución
       debug:
         msg: |
