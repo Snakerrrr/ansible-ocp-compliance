@@ -9,10 +9,33 @@
   changed_when: false
   failed_when: false
 
-- name: Fallar si oc no está disponible
-  fail:
-    msg: "oc (OpenShift CLI) no está disponible. Este rol requiere estar logueado al cluster."
-  when: oc_version.rc != 0
+- name: Verificar si el kubeconfig está configurado
+  shell: |
+    oc config view --minify --raw 2>&1 || echo "NO_KUBECONFIG"
+  register: kubeconfig_check
+  changed_when: false
+  failed_when: false
+  when: oc_version.rc == 0
+
+- name: Determinar si se puede usar oc para buscar secrets
+  set_fact:
+    can_use_oc: "{{ oc_version.rc == 0 and kubeconfig_check.stdout is defined and 'NO_KUBECONFIG' not in kubeconfig_check.stdout }}"
+  when: oc_version.rc == 0
+
+- name: Advertir si oc no está disponible o no tiene kubeconfig
+  debug:
+    msg: |
+      ⚠️  ADVERTENCIA: El comando 'oc' no está disponible o no tiene kubeconfig configurado.
+      
+      El playbook intentará usar métodos alternativos para obtener el kubeconfig:
+      1. Secrets de ACM usando módulos de Ansible (si están disponibles)
+      2. Variables managed_cluster_kubeconfigs
+      3. Archivos locales en /tmp/kubeconfig-*
+      
+      Si ejecutas desde AAP, asegúrate de:
+      - Configurar una credencial de tipo "OpenShift or Kubernetes API Bearer Token"
+      - O configurar el kubeconfig en el proyecto de AAP
+  when: oc_version.rc != 0 or (kubeconfig_check.stdout is defined and 'NO_KUBECONFIG' in kubeconfig_check.stdout)
 
 - name: Establecer variables iniciales básicas
   set_fact:
@@ -36,21 +59,43 @@
     secret_pattern: "secret/{{ managed_cluster_name }}-import"
   when: target_cluster_context != ''
 
-- name: Verificar si el secret cluster-import existe
+- name: Verificar si el secret cluster-import existe (usando oc)
   shell: |
     oc get secret {{ managed_cluster_name }}-import -n {{ managed_cluster_name }} -o name 2>&1 || echo "NOT_FOUND"
   register: secret_check
   changed_when: false
   failed_when: false
-  when: target_cluster_context != ''
+  when:
+    - target_cluster_context != ''
+    - can_use_oc | default(false) | bool
 
-- name: Obtener import.yaml del secret cluster-import
+- name: Marcar secret como no encontrado si no se puede usar oc
+  set_fact:
+    secret_check:
+      stdout: "NOT_FOUND"
+      rc: 1
+  when:
+    - target_cluster_context != ''
+    - not (can_use_oc | default(false) | bool)
+
+- name: Obtener import.yaml del secret cluster-import (usando oc)
   shell: |
     oc get secret {{ managed_cluster_name }}-import -n {{ managed_cluster_name }} -o jsonpath='{.data.import\.yaml}' 2>&1 | base64 -d || echo ""
   register: import_yaml_raw
   changed_when: false
   failed_when: false
-  when: target_cluster_context != ''
+  when:
+    - target_cluster_context != ''
+    - can_use_oc | default(false) | bool
+
+- name: Marcar import.yaml como vacío si no se puede usar oc
+  set_fact:
+    import_yaml_raw:
+      stdout: ""
+      rc: 1
+  when:
+    - target_cluster_context != ''
+    - not (can_use_oc | default(false) | bool)
 
 - name: DEBUG - Verificar si se encontró el import.yaml
   debug:
@@ -136,7 +181,18 @@
   register: kubeconfig_from_admin
   changed_when: false
   failed_when: false
-  when: target_cluster_context != ''
+  when:
+    - target_cluster_context != ''
+    - can_use_oc | default(false) | bool
+
+- name: Marcar admin-kubeconfig como no encontrado si no se puede usar oc
+  set_fact:
+    kubeconfig_from_admin:
+      stdout: ""
+      rc: 1
+  when:
+    - target_cluster_context != ''
+    - not (can_use_oc | default(false) | bool)
 
 - name: Determinar kubeconfig final desde secrets de ACM (priorizar admin-kubeconfig sobre bootstrap-hub-kubeconfig)
   set_fact:
@@ -149,7 +205,18 @@
   register: kubeconfig_from_custom_secret
   changed_when: false
   failed_when: false
-  when: target_cluster_context != ''
+  when:
+    - target_cluster_context != ''
+    - can_use_oc | default(false) | bool
+
+- name: Marcar kubeconfig personalizado como no encontrado si no se puede usar oc
+  set_fact:
+    kubeconfig_from_custom_secret:
+      stdout: ""
+      rc: 1
+  when:
+    - target_cluster_context != ''
+    - not (can_use_oc | default(false) | bool)
 
 - name: Determinar qué secret se usó
   set_fact:
