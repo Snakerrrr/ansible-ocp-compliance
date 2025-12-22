@@ -39,6 +39,19 @@
   failed_when: false
   when: target_cluster_context != ''
 
+- name: DEBUG - Verificar si se encontró el import.yaml
+  debug:
+    msg:
+      - "Comando ejecutado exitosamente."
+      - "¿Está vacía la salida?: {{ import_yaml_raw.stdout == '' }}"
+      - "Longitud de los datos encontrados: {{ import_yaml_raw.stdout | length }}"
+      # No imprimimos el contenido completo para no ensuciar el log con binarios
+
+- name: Fallar si no se encontró el secreto
+  fail:
+    msg: "❌ No se pudo obtener el secret '{{ managed_cluster_name }}-import'. Verifica que el AAP tenga permisos en el namespace '{{ managed_cluster_name }}' en el Hub."
+  when: import_yaml_raw.stdout | length < 10
+
 - name: Establecer ruta del archivo temporal import.yaml
   set_fact:
     import_yaml_file: "/tmp/import-{{ managed_cluster_name }}.yaml"
@@ -193,16 +206,19 @@
 - name: Mostrar método de acceso al cluster
   debug:
     msg: |
-      Método de acceso al cluster:
-      - Cluster: {{ managed_cluster_name if target_cluster_context != '' else 'Hub (contexto actual)' }}
-      - Fuente: {{ kubeconfig_source if target_cluster_context != '' else 'Contexto actual' }}
-      - Kubeconfig: {{ managed_cluster_kubeconfig_path if (target_cluster_context != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else 'Contexto actual' }}
+      ========================================
+      Método de Acceso al Cluster
+      ========================================
+      🌍 Cluster/Ambiente: {{ managed_cluster_name if target_cluster_context != '' else 'HUB (contexto actual)' }}
+      📍 Fuente: {{ kubeconfig_source if target_cluster_context != '' else 'Contexto actual (HUB)' }}
+      🔑 Kubeconfig: {{ managed_cluster_kubeconfig_path if (target_cluster_context != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else 'Contexto actual (HUB)' }}
       {% if kubeconfig_source == 'acm_native' %}
-      - Secret nativo de ACM en namespace: {{ managed_cluster_name }}
-      - Secrets buscados: admin-kubeconfig, {{ managed_cluster_name }}-import
+      📦 Secret nativo de ACM en namespace: {{ managed_cluster_name }}
+      🔍 Secrets buscados: admin-kubeconfig, {{ managed_cluster_name }}-import
       {% elif kubeconfig_source == 'custom' %}
-      - Secret personalizado: managed-cluster-kubeconfig-{{ managed_cluster_name }} en namespace {{ kubeconfig_secret_namespace }}
+      📦 Secret personalizado: managed-cluster-kubeconfig-{{ managed_cluster_name }} en namespace {{ kubeconfig_secret_namespace }}
       {% endif %}
+      ========================================
   when: target_cluster_context != ''
 
 - name: Verificar que oscap está disponible
@@ -238,15 +254,16 @@
     msg: "Advertencia: zip no está disponible. No se podrá crear el archivo ZIP. Instalar con: sudo apt-get install zip"
   when: zip_check.rc != 0
 
-- name: Definir directorio de salida
+- name: Definir directorio de salida (ya viene del playbook con nombre de cluster si aplica)
   set_fact:
     export_output_dir: "{{ export_output_dir | default('/tmp/compliance-reports') }}"
 
-- name: Crear directorio de salida
+- name: Crear directorio de salida (organizado por cluster)
   file:
     path: "{{ export_output_dir }}"
     state: directory
     mode: '0755'
+    recurse: yes
 
 - name: Buscar PVCs de compliance
   command: oc get pvc -n openshift-compliance {{ oc_context_arg | default('') }} --no-headers -o custom-columns=NAME:.metadata.name
@@ -261,7 +278,13 @@
 
 - name: Mostrar PVCs encontrados
   debug:
-    msg: "PVCs CIS encontrados: {{ cis_pvcs }}, PVCs PCI encontrados: {{ pci_pvcs }}"
+    msg: |
+      ========================================
+      PVCs Encontrados en {{ managed_cluster_name if target_cluster_context != '' else 'HUB' }}
+      ========================================
+      📊 PVCs CIS: {{ cis_pvcs | length }} - {{ cis_pvcs if cis_pvcs | length > 0 else 'Ninguno' }}
+      📊 PVCs PCI: {{ pci_pvcs | length }} - {{ pci_pvcs if pci_pvcs | length > 0 else 'Ninguno' }}
+      ========================================
 
 - name: Establecer valores finales para sub-tareas
   set_fact:

@@ -2,40 +2,40 @@ apiVersion: policy.open-cluster-management.io/v1
 kind: PolicyGenerator
 metadata:
   name: compliance-operator-policies
+  # Esta fecha se actualiza sola con Ansible
   # Última actualización: {{ ansible_date_time.iso8601 }}
 
 policyDefaults:
   namespace: policies
-  remediationAction: {{ _scan_remediation_action | default('inform') }}
+  remediationAction: enforce   # <--- CAMBIO 1: Forzar creación
   placement:
     labelSelector:
-      matchExpressions:
-        - key: {{ placement_label_key | default('environment') }}
-          operator: In
-          values:
-            - {{ placement_label_value | default('cluster-acs') }}
+      matchLabels:
+        {{ placement_label_key }}: "{{ placement_label_value }}"  # <--- CAMBIO 2: Usar etiqueta dinámica
 
 policies:
   - name: install-compliance-operator
     disabled: false
-    remediationAction: {{ _install_operator_remediation_action | default('enforce') }}
+    remediationAction: enforce
     manifests:
       - path: compliance-operator/install
 
   - name: scan-setting-periodic
-    remediationAction: {{ _scan_remediation_action }}
     disabled: false
+    remediationAction: enforce
     manifests:
       - path: compliance-operator/scan-setting
 
+  # Mantener la lógica dinámica de Ansible para activar/desactivar escaneos
   - name: run-cis-scan
-    remediationAction: {{ _scan_remediation_action }}
-    disabled: {{ 'false' if run_cis else 'true' }}
+    remediationAction: enforce
+    # Aquí Ansible decide si activa o desactiva según tus variables
+    disabled: {{ not (cis_scan_enabled | default(true) | bool) }}
     manifests:
       - path: compliance-operator/profiles/cis
 
   - name: run-pci-scan
-    remediationAction: {{ _scan_remediation_action }}
-    disabled: {{ 'false' if run_pci else 'true' }}
+    remediationAction: enforce
+    disabled: {{ not (pci_scan_enabled | default(false) | bool) }}
     manifests:
       - path: compliance-operator/profiles/pci

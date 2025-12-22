@@ -4,10 +4,20 @@
 # Uso: Se ejecuta después de GitOps y antes de export HTML
 # NOTA: Los escaneos se ejecutan automáticamente según el schedule configurado en ScanSetting
 
-- name: Establecer variables iniciales básicas
+- name: Establecer variables iniciales básicas (sin recursión)
   set_fact:
-    target_cluster_context: "{{ target_cluster_context | default('') }}"
+    _target_cluster_context_temp: ""
+    managed_cluster_name: ""
+
+- name: Actualizar target_cluster_context si está definido
+  set_fact:
+    _target_cluster_context_temp: "{{ target_cluster_context }}"
     managed_cluster_name: "{{ target_cluster_context }}"
+  when: target_cluster_context is defined
+
+- name: Usar target_cluster_context establecido
+  set_fact:
+    target_cluster_context: "{{ _target_cluster_context_temp }}"
 
 - name: Establecer compliance_namespace (valor por defecto si no se pasó explícitamente)
   set_fact:
