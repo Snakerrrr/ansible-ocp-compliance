@@ -339,7 +339,7 @@
   when: target_cluster_context != ''
 
 - name: Verificar que oscap está disponible
-  command: which oscap
+  command: oscap --version
   register: oscap_check
   changed_when: false
   failed_when: false
