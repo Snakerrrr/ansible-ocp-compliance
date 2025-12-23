@@ -1,4 +1,5 @@
 kubectl
-*.tar.gz
 oc
-kubectl
+*.tar.gz
+*.tar
+ee-compliance/*.tar
