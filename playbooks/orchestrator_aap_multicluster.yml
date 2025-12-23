@@ -93,10 +93,9 @@
         name: gitops_policy_update
       vars:
         # Pasar variables directamente del playbook
-        # Los defaults se manejan en el playbook o vienen de AAP
+        # gitops_repo_path tiene default fijo en el rol, no necesita pasarse explícitamente
         github_token: "{{ github_token }}"
         github_user: "{{ github_user }}"
-        gitops_repo_path: "{{ gitops_repo_path }}"
         gitops_repo_branch: "{{ gitops_repo_branch }}"
         run_cis: "{{ run_cis }}"
         run_pci: "{{ run_pci }}"

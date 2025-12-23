@@ -1,0 +1,8 @@
+---
+# Defaults del rol gitops_policy_update
+# Valores fijos estructurales (sin recursión)
+# Estos valores pueden ser sobrescritos desde el playbook
+
+# Ruta temporal para clonar el repo GitOps
+gitops_repo_path: "/tmp/acm-policies"
+

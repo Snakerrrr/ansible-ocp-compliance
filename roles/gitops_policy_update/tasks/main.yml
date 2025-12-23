@@ -24,7 +24,8 @@
   include_role:
     name: toggle_policies
   vars:
-    # Pasar variables directamente del playbook (sin redefinirlas)
+    # Pasar variables directamente del playbook
+    # gitops_repo_path tiene default fijo en este rol, se pasa automáticamente
     cis_scan_enabled: "{{ run_cis }}"
     pci_scan_enabled: "{{ run_pci }}"
     gitops_repo_path: "{{ gitops_repo_path }}"
