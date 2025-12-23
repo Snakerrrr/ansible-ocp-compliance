@@ -93,6 +93,20 @@
     export_output_dir: "/tmp/compliance-reports"
 
     # =========================
+    # Email configuration (defaults)
+    # =========================
+    # Configuración para envío de reportes por correo electrónico
+    # Requiere: servidor SMTP accesible o Gmail/Outlook con App Password
+    do_send_email: false
+    email_smtp_host: "smtp.gmail.com"
+    email_smtp_port: 587
+    email_smtp_username: "bsoto@redhat.com"
+    email_smtp_password: "swtgocesdjeasgbx"
+    email_to: "bsoto@redhat.com"
+    email_from: "jmunozag@redhat.com"
+    email_subject_prefix: "Reporte de Compliance"
+
+    # =========================
     # Control flags (defaults)
     # =========================
     do_gitops: false
@@ -111,6 +125,7 @@
         _install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"
         _do_gitops: "{{ do_gitops | default(false) | bool }}"
         _do_export_html: "{{ do_export_html | default(false) | bool }}"
+        _do_send_email: "{{ do_send_email | default(false) | bool }}"
         _gitops_repo_url: "https://{{ github_user | default('Snakerrrr') }}:{{ github_token | default('') }}@github.com/{{ github_user | default('Snakerrrr') }}/acm-policies.git"
         _scan_schedule: "0 1 * * *"
         _scan_setting_name: default
@@ -262,6 +277,215 @@
             msg: "Exportación HTML completada. Reportes disponibles en: {{ _export_output_dir }}"
 
     # ============================================================
+    # FASE 4: Envío de reportes por correo electrónico
+    # ============================================================
+    # NOTA: En AAP, los Pods son efímeros. Los archivos en /tmp se pierden
+    # al finalizar el job. Esta fase envía los reportes por correo antes
+    # de que el Pod se destruya.
+    - name: Enviar reportes por correo electrónico
+      when: 
+        - _do_export_html | bool
+        - _do_send_email | bool
+      block:
+        - name: Verificar disponibilidad del módulo mail
+          command: python3 -c "import smtplib; import email"
+          register: mail_module_check
+          changed_when: false
+          failed_when: false
+
+        - name: Advertir si el módulo mail no está disponible
+          debug:
+            msg: |
+              ⚠️  ADVERTENCIA: El módulo mail de Ansible no está disponible.
+              
+              El módulo mail requiere las librerías Python:
+              - smtplib (normalmente incluida en Python estándar)
+              - email (normalmente incluida en Python estándar)
+              
+              En AAP, asegúrate de que tu Execution Environment tenga Python
+              con estas librerías disponibles.
+              
+              El envío de correo se omitirá.
+          when: mail_module_check.rc != 0
+
+        - name: Validar configuración de correo
+          fail:
+            msg: |
+              Configuración de correo incompleta. Se requieren:
+              - email_smtp_host
+              - email_smtp_username
+              - email_smtp_password
+              - email_to
+              - email_from (opcional, se usará email_smtp_username si no se especifica)
+              
+              En AAP, puedes configurar estas variables como:
+              - Variables de entorno en el Job Template
+              - Extra Variables en el Job Template
+              - Secrets en AAP (recomendado para passwords)
+          when: >
+            (email_smtp_host is not defined or email_smtp_host == "") or
+            (email_smtp_username is not defined or email_smtp_username == "") or
+            (email_smtp_password is not defined or email_smtp_password == "") or
+            (email_to is not defined or email_to == "")
+
+        - name: Establecer valores de correo con defaults (priorizar variables de entorno en AAP)
+          set_fact:
+            # En AAP, las credenciales pueden venir de variables de entorno o Extra Variables
+            _email_smtp_host: "{{ email_smtp_host | default(lookup('env', 'EMAIL_SMTP_HOST', default='')) }}"
+            _email_smtp_port: "{{ email_smtp_port | default(lookup('env', 'EMAIL_SMTP_PORT', default='587')) | int }}"
+            _email_smtp_username: "{{ email_smtp_username | default(lookup('env', 'EMAIL_SMTP_USERNAME', default='')) }}"
+            _email_smtp_password: "{{ email_smtp_password | default(lookup('env', 'EMAIL_SMTP_PASSWORD', default='')) }}"
+            _email_to: "{{ email_to | default(lookup('env', 'EMAIL_TO', default='')) }}"
+            _email_from: "{{ email_from | default(email_smtp_username | default(lookup('env', 'EMAIL_FROM', default=''))) }}"
+            _email_subject_prefix: "{{ email_subject_prefix | default('Reporte de Compliance') }}"
+          when: mail_module_check.rc == 0
+
+        - name: Buscar archivo ZIP generado
+          find:
+            paths: "{{ _export_output_dir }}"
+            patterns: "compliance-reports-*.zip"
+            file_type: file
+          register: zip_files
+          failed_when: false
+
+        - name: Buscar archivo summary.txt
+          find:
+            paths: "{{ _export_output_dir }}"
+            patterns: "summary.txt"
+            file_type: file
+          register: summary_files
+          failed_when: false
+
+        - name: Determinar archivo ZIP a enviar
+          set_fact:
+            zip_file_to_send: "{{ zip_files.files[0].path if (zip_files.files is defined and zip_files.files | length > 0) else '' }}"
+            summary_file_to_send: "{{ summary_files.files[0].path if (summary_files.files is defined and summary_files.files | length > 0) else '' }}"
+
+        - name: Advertir si no se encontró archivo ZIP
+          debug:
+            msg: |
+              ⚠️  No se encontró archivo ZIP en {{ _export_output_dir }}.
+              El correo se enviará sin adjuntos.
+          when: zip_file_to_send == ""
+
+        - name: Construir asunto del correo
+          set_fact:
+            email_subject: "{{ _email_subject_prefix }} - {{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else 'HUB' }} - {{ ansible_date_time.date }}"
+
+        - name: Construir cuerpo del correo
+          set_fact:
+            email_body: |
+              Reporte de Compliance generado exitosamente.
+              
+              Detalles:
+              - Cluster: {{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else 'HUB (contexto actual)' }}
+              - Fecha: {{ ansible_date_time.iso8601 }}
+              - Directorio: {{ _export_output_dir }}
+              
+              {% if zip_file_to_send != '' %}
+              - Archivo ZIP adjunto: {{ zip_file_to_send | basename }}
+              {% endif %}
+              
+              {% if summary_file_to_send != '' %}
+              - Summary adjunto: {{ summary_file_to_send | basename }}
+              {% endif %}
+              
+              Este correo fue generado automáticamente por el Compliance Pipeline de Ansible.
+
+        - name: Enviar reporte por correo (con ZIP si existe)
+          mail:
+            host: "{{ _email_smtp_host }}"
+            port: "{{ _email_smtp_port }}"
+            username: "{{ _email_smtp_username }}"
+            password: "{{ _email_smtp_password }}"
+            to: "{{ _email_to }}"
+            from: "{{ _email_from }}"
+            subject: "{{ email_subject }}"
+            body: "{{ email_body }}"
+            attach:
+              - "{{ zip_file_to_send }}"
+            secure: starttls
+          when: 
+            - mail_module_check.rc == 0
+            - zip_file_to_send != ""
+          ignore_errors: true
+          register: email_result_zip
+
+        - name: Enviar reporte por correo (solo summary si no hay ZIP)
+          mail:
+            host: "{{ _email_smtp_host }}"
+            port: "{{ _email_smtp_port }}"
+            username: "{{ _email_smtp_username }}"
+            password: "{{ _email_smtp_password }}"
+            to: "{{ _email_to }}"
+            from: "{{ _email_from }}"
+            subject: "{{ email_subject }}"
+            body: "{{ email_body }}"
+            attach:
+              - "{{ summary_file_to_send }}"
+            secure: starttls
+          when: 
+            - mail_module_check.rc == 0
+            - zip_file_to_send == ""
+            - summary_file_to_send != ""
+          ignore_errors: true
+          register: email_result_summary
+
+        - name: Enviar reporte por correo (sin adjuntos si no hay archivos)
+          mail:
+            host: "{{ _email_smtp_host }}"
+            port: "{{ _email_smtp_port }}"
+            username: "{{ _email_smtp_username }}"
+            password: "{{ _email_smtp_password }}"
+            to: "{{ _email_to }}"
+            from: "{{ _email_from }}"
+            subject: "{{ email_subject }}"
+            body: "{{ email_body }}"
+            secure: starttls
+          when: 
+            - mail_module_check.rc == 0
+            - zip_file_to_send == ""
+            - summary_file_to_send == ""
+          ignore_errors: true
+          register: email_result_no_attach
+
+        - name: Verificar resultado del envío de correo
+          set_fact:
+            email_sent_successfully: >
+              (email_result_zip is defined and email_result_zip.failed == false) or
+              (email_result_summary is defined and email_result_summary.failed == false) or
+              (email_result_no_attach is defined and email_result_no_attach.failed == false)
+
+        - name: Informar que correo se envió exitosamente
+          debug:
+            msg: |
+              ✅ Correo enviado exitosamente a {{ _email_to }}
+              Asunto: {{ email_subject }}
+              {% if zip_file_to_send != '' %}
+              Archivo adjunto: {{ zip_file_to_send | basename }}
+              {% elif summary_file_to_send != '' %}
+              Archivo adjunto: {{ summary_file_to_send | basename }}
+              {% endif %}
+          when: 
+            - mail_module_check.rc == 0
+            - email_sent_successfully | default(false) | bool
+
+        - name: Advertir si el envío de correo falló
+          debug:
+            msg: |
+              ⚠️  El envío de correo falló. Verifica:
+              1. Que el módulo mail esté disponible en el Execution Environment
+              2. Que las credenciales SMTP sean correctas
+              3. Que el servidor SMTP sea accesible desde AAP
+              4. Que el puerto SMTP no esté bloqueado por firewall
+              
+              Los reportes están disponibles en: {{ _export_output_dir }}
+              (Nota: En AAP, estos archivos se perderán cuando el Pod termine)
+          when: 
+            - mail_module_check.rc == 0
+            - not (email_sent_successfully | default(false) | bool)
+
+    # ============================================================
     # Resumen final
     # ============================================================
     - name: Resumen final del pipeline
@@ -272,5 +496,6 @@
           ========================================
           GitOps ejecutado: {{ _do_gitops }}
           Export HTML ejecutado: {{ _do_export_html }}
+          Correo enviado: {{ _do_send_email if (_do_export_html and _do_send_email) else false }}
           ========================================
 
