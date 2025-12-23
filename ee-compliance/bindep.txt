@@ -1,0 +1,10 @@
+# Herramientas de sistema requeridas para reportes
+openscap-scanner
+bzip2
+zip
+unzip
+git
+gcc
+python3-devel
+libxml2-devel
+libxslt-devel

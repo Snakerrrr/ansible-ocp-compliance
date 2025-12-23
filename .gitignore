@@ -1,5 +1,16 @@
+# Binarios de OpenShift/Kubernetes
 kubectl
 oc
+
+# Archivos comprimidos
 *.tar.gz
 *.tar
 ee-compliance/*.tar
+
+# Reportes generados
+compliance-reports/
+*.html
+
+# Archivos temporales
+/tmp/
+*.tmp
