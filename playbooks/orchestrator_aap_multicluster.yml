@@ -4,48 +4,98 @@
   connection: local
   gather_facts: true
   vars:
-    # --- Variables que vendrán de la Survey de AAP ---
-    # survey_target_clusters: ["cluster-acs", "cluster-2"]
-    # do_gitops: false
-    # do_export_html: true
-
-    # --- Defaults para evitar fallos si no se definen en AAP ---
+    # --- CONFIGURACIÓN ESTRUCTURAL (Sin datos de usuario) ---
+    # Solo dejamos rutas temporales que no dependen del usuario
     export_output_dir: "/tmp/compliance-reports"
-    survey_target_clusters: []
+    
+    # Defaults de seguridad (para que no falle si no se pasan)
+    do_gitops: false
+    do_export_html: false
+    do_send_email: false
+
+    # YA NO definimos github_user, github_token, email_smtp_host, etc. aquí.
+    # Ansible esperará que vengan de AAP (Extra Vars, Survey o Credentials).
 
   tasks:
     # ---------------------------------------------------------
-    # 1. Normalización de Datos (Sanitización)
+    # 1. VALIDACIÓN DE INPUTS (Semáforo de Seguridad)
+    # ---------------------------------------------------------
+    - name: Validar variables obligatorias de infraestructura Git
+      assert:
+        that:
+          - github_user is defined
+          - github_user | length > 0
+          - gitops_repo_branch is defined
+          - gitops_repo_branch | length > 0
+          - github_token is defined
+          - github_token | length > 0
+        fail_msg: "❌ ERROR: Faltan variables de Git. Defínalas en AAP (Extra Vars, Survey o Credential de Source Control)."
+      when: do_gitops | bool
+
+    - name: Validar variables obligatorias de correo
+      assert:
+        that:
+          - email_smtp_host is defined
+          - email_smtp_host | length > 0
+          - email_smtp_username is defined
+          - email_smtp_username | length > 0
+          - email_smtp_password is defined
+          - email_smtp_password | length > 0
+          - email_to is defined
+          - email_to | length > 0
+        fail_msg: "❌ ERROR: Faltan variables de Correo. Defínalas en AAP (Extra Vars o Survey)."
+      when: do_send_email | bool
+
+    - name: Validar flags de control
+      fail:
+        msg: "Al menos uno de los flags debe estar activado: do_gitops o do_export_html"
+      when: not do_gitops and not do_export_html
+
+    # ---------------------------------------------------------
+    # 2. NORMALIZACIÓN DE DATOS (Sanitización)
     # ---------------------------------------------------------
     - name: Normalizar lista de clusters desde AAP
       set_fact:
         # AAP a veces envía la lista como string separado por comas o saltos de línea
         # Esto asegura que siempre tengamos una lista válida de Python
         target_clusters_list: "{{ survey_target_clusters.split('\n') if survey_target_clusters is string else survey_target_clusters }}"
-    - name: Mostrar plan de ejecución
-      debug:
-        msg: |
-          🚀 Iniciando Orquestación Multi-Cluster
-          =======================================
-          Clusters seleccionados: {{ target_clusters_list }}
-          GitOps Activado: {{ do_gitops | default(false) }}
-          Export HTML Activado: {{ do_export_html | default(true) }}
+      when: survey_target_clusters is defined
+
+    - name: Inicializar lista vacía si no se definió survey_target_clusters
+      set_fact:
+        target_clusters_list: []
+      when: survey_target_clusters is not defined
 
     # ---------------------------------------------------------
-    # 2. FASE GITOPS (Se ejecuta UNA vez al inicio)
+    # 3. DEBUG INFORMATIVO (Para ver qué recibió el playbook)
+    # ---------------------------------------------------------
+    - name: Mostrar configuración recibida (Sin secretos)
+      debug:
+        msg: |
+          🚀 INICIO DE PIPELINE MULTI-CLUSTER
+          ====================================
+          Clusters:       {{ target_clusters_list }}
+          GitOps:         {{ do_gitops }}
+          Export HTML:    {{ do_export_html }}
+          Enviar Correo:  {{ do_send_email }}
+          User Git:       {{ github_user if (do_gitops and github_user is defined) else 'N/A' }}
+          Branch:         {{ gitops_repo_branch if (do_gitops and gitops_repo_branch is defined) else 'N/A' }}
+          Destinatario:   {{ email_to if (do_send_email and email_to is defined) else 'N/A' }}
+          Host SMTP:      {{ email_smtp_host if (do_send_email and email_smtp_host is defined) else 'N/A' }}
+          ====================================
+
+    # ---------------------------------------------------------
+    # 4. FASE GITOPS (Se ejecuta UNA vez al inicio)
     # ---------------------------------------------------------
     - name: Ejecutar Fase GitOps (Configuración Global)
       include_role:
         name: gitops_policy_update
       vars:
-        # Prioridad para github_token:
-        # 1. Survey (github_token) - Si el usuario lo ingresa
-        # 2. Credential de Source Control (GIT_TOKEN o SCM_TOKEN) - Si está configurado en AAP
-        # 3. Default vacío
-        github_token: "{{ github_token | default(lookup('env', 'GIT_TOKEN') | default(lookup('env', 'SCM_TOKEN') | default(''))) }}"
-        github_user: "{{ github_user | default(lookup('env', 'GIT_USER') | default('Snakerrrr')) }}"
+        # Pasar todas las variables directamente (sin defaults hardcodeados)
+        github_token: "{{ github_token }}"
+        github_user: "{{ github_user }}"
         gitops_repo_path: "{{ gitops_repo_path | default('/tmp/acm-policies') }}"
-        gitops_repo_branch: "{{ gitops_repo_branch | default('main') }}"
+        gitops_repo_branch: "{{ gitops_repo_branch }}"
         run_cis: "{{ run_cis | default(true) }}"
         run_pci: "{{ run_pci | default(false) }}"
         scan_remediation_action: "{{ scan_remediation_action | default('inform') }}"
@@ -55,10 +105,12 @@
         placement_use_matchlabels: "{{ placement_use_matchlabels | default(true) }}"
         scan_schedule: "{{ scan_schedule | default('0 2 * * *') }}"
         scan_setting_name: "{{ scan_setting_name | default('periodic-daily') }}"
-      when: do_gitops | default(false) | bool
+        cis_scan_enabled: "{{ run_cis | default(true) }}"
+        pci_scan_enabled: "{{ run_pci | default(false) }}"
+      when: do_gitops | bool
 
     # ---------------------------------------------------------
-    # 3. FASE EXTRACCIÓN (Bucle por cada Cluster)
+    # 5. FASE EXTRACCIÓN (Bucle por cada Cluster)
     # ---------------------------------------------------------
     - name: "Procesando extracción para {{ item }}"
       include_role:
@@ -67,18 +119,20 @@
         # INYECCIÓN DINÁMICA DE CONTEXTO
         target_cluster_context: "{{ item }}"
         # Forzamos la creación de subcarpetas para no sobrescribir
-        export_output_dir: "/tmp/compliance-reports/{{ item }}"
+        export_output_dir: "{{ export_output_dir }}/{{ item }}"
       loop: "{{ target_clusters_list }}"
       loop_control:
         loop_var: item
         label: "Cluster: {{ item }}"
-      when: do_export_html | default(true) | bool
+      when: 
+        - do_export_html | bool
+        - target_clusters_list | length > 0
       # RESILIENCIA: Si falla un cluster, sigue con el siguiente
       ignore_errors: true
 
     # ---------------------------------------------------------
-    # 4. RESUMEN FINAL
+    # 6. RESUMEN FINAL
     # ---------------------------------------------------------
     - name: Resumen de ubicación de reportes
       debug:
-        msg: "✅ Los reportes se han guardado en: /tmp/compliance-reports/<nombre-cluster>/"
+        msg: "✅ Los reportes se han guardado en: {{ export_output_dir }}/<nombre-cluster>/"

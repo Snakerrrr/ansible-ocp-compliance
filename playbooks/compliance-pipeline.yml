@@ -2,93 +2,59 @@
 # Playbook Unificado: compliance-pipeline.yml
 # ENTRYPOINT único para toda la automatización de compliance OCP
 #
+# Este playbook es 100% agnóstico - NO contiene valores hardcodeados.
+# Todas las variables deben inyectarse desde AAP (Extra Vars, Survey o Credentials).
+#
 # Flags de control:
 #   do_gitops: true|false  - Ejecutar GitOps (toggle + commit + push)
 #   do_export_html: true|false - Exportar resultados a HTML
 #   do_send_email: true|false - Enviar reportes por correo
-#
-# Casos de uso:
-#   1. Solo activar scans (GitOps):
-#      ansible-playbook playbooks/compliance-pipeline.yml -i inventories/localhost.yml \
-#        -e "do_gitops=true do_export_html=false"
-#
-#   2. Solo exportar HTML (healthcheck):
-#      ansible-playbook playbooks/compliance-pipeline.yml -i inventories/localhost.yml \
-#        -e "do_gitops=false do_export_html=true"
-#
-#   3. Pipeline completo:
-#      ansible-playbook playbooks/compliance-pipeline.yml -i inventories/localhost.yml \
-#        -e "do_gitops=true do_export_html=true do_send_email=true"
 
 - name: Compliance Pipeline OCP (CIS + PCI DSS)
   hosts: localhost
   gather_facts: true
 
   vars:
-    # --- CONFIGURACIÓN DE FLUJO (Defaults seguros) ---
-    # Estos valores se sobrescriben desde el Survey de AAP
+    # --- CONFIGURACIÓN ESTRUCTURAL (Sin datos de usuario) ---
+    # Solo dejamos rutas temporales que no dependen del usuario
+    export_output_dir: "/tmp/compliance-reports"
+    
+    # Defaults de seguridad (para que no falle si no se pasan)
     do_gitops: false
     do_export_html: false
     do_send_email: false
 
-    # --- CONFIGURACIÓN DE REPOSITORIO ---
-    github_user: "Snakerrrr"
-    gitops_repo_branch: "main"
-    gitops_repo_path: "/tmp/acm-policies"
-    # NOTA: 'github_token' NO debe definirse aquí. Se inyecta vía Credencial AAP.
-
-    # --- CONFIGURACIÓN DE COMPLIANCE (defaults) ---
-    run_cis: true
-    run_pci: true
-    scan_remediation_action: "inform"
-    install_operator_remediation_action: "enforce"
-    
-    # --- CONFIGURACIÓN DE SCANSETTING (defaults) ---
-    scan_schedule: "0 2 * * *"
-    scan_setting_name: "periodic-daily"
-    
-    # --- CONFIGURACIÓN DE ACM PLACEMENT (defaults) ---
-    placement_label_key: "compliance"
-    placement_label_value: "enabled"
-    placement_use_matchlabels: true
-    
-    # --- CONFIGURACIÓN DE CLUSTER CONTEXT (defaults) ---
-    target_cluster_context: ""
-    kubeconfig_secret_namespace: "openshift-compliance"
-    managed_cluster_kubeconfigs: {}
-
-    # --- CONFIGURACIÓN DE CORREO (Estructural) ---
-    email_smtp_host: "smtp.gmail.com"
-    email_smtp_port: 587
-    email_from: "robot_aap@redhat.com"
-    email_subject_prefix: "Reporte de Compliance"
-    email_to: "" # Se llena desde Survey
-    email_smtp_username: "" # Se llena desde Survey/Secrets
-    # NOTA: 'email_smtp_password' se inyecta vía Extra Vars/Secrets en AAP.
-
-    # --- RUTAS ---
-    export_output_dir: "/tmp/compliance-reports"
+    # YA NO definimos github_user, github_token, email_smtp_host, etc. aquí.
+    # Ansible esperará que vengan de AAP (Extra Vars, Survey o Credentials).
 
   tasks:
     # ============================================================
-    # VALIDACIONES DE SEGURIDAD
+    # VALIDACIÓN DE INPUTS (Semáforo de Seguridad)
     # ============================================================
-    - name: Validar inyección de token GitHub
+    - name: Validar variables obligatorias de infraestructura Git
       assert:
         that:
+          - github_user is defined
+          - github_user | length > 0
+          - gitops_repo_branch is defined
+          - gitops_repo_branch | length > 0
           - github_token is defined
           - github_token | length > 0
-        fail_msg: "CRÍTICO: No se recibió 'github_token'. Verifique que la Credencial de Git esté adjunta al Template en AAP."
+        fail_msg: "❌ ERROR: Faltan variables de Git. Defínalas en AAP (Extra Vars, Survey o Credential de Source Control)."
       when: do_gitops | bool
 
-    - name: Validar credenciales de correo
+    - name: Validar variables obligatorias de correo
       assert:
         that:
+          - email_smtp_host is defined
+          - email_smtp_host | length > 0
+          - email_smtp_username is defined
+          - email_smtp_username | length > 0
           - email_smtp_password is defined
           - email_smtp_password | length > 0
           - email_to is defined
           - email_to | length > 0
-        fail_msg: "CRÍTICO: No se recibieron credenciales SMTP completas. Configure email_smtp_password y email_to en Extra Vars/Secrets de AAP."
+        fail_msg: "❌ ERROR: Faltan variables de Correo. Defínalas en AAP (Extra Vars o Survey)."
       when: do_send_email | bool
 
     - name: Validar flags de control
@@ -103,19 +69,20 @@
       set_fact:
         export_output_dir: "{{ (export_output_dir | default('/tmp/compliance-reports')) + '/' + target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else (export_output_dir | default('/tmp/compliance-reports')) }}"
 
-    - name: Mostrar configuración del pipeline
+    - name: Mostrar configuración recibida (Sin secretos)
       debug:
         msg: |
-          ========================================
-          🚀 INICIANDO PIPELINE DE COMPLIANCE
-          ========================================
-          - GitOps Activado: {{ do_gitops }}
-          - Exportar HTML:   {{ do_export_html }}
-          - Enviar Correo:   {{ do_send_email }}
-          - Usuario Git:     {{ github_user }}
-          - Cluster:         {{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else 'HUB (contexto actual)' }}
-          - Placement:       {{ placement_label_key }}={{ placement_label_value }}
-          ========================================
+          🚀 INICIO DE PIPELINE DE COMPLIANCE
+          ====================================
+          GitOps:         {{ do_gitops }}
+          Export HTML:    {{ do_export_html }}
+          Enviar Correo:  {{ do_send_email }}
+          User Git:       {{ github_user if (do_gitops and github_user is defined) else 'N/A' }}
+          Branch:         {{ gitops_repo_branch if (do_gitops and gitops_repo_branch is defined) else 'N/A' }}
+          Cluster:        {{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else 'HUB (contexto actual)' }}
+          Destinatario:   {{ email_to if (do_send_email and email_to is defined) else 'N/A' }}
+          Host SMTP:      {{ email_smtp_host if (do_send_email and email_smtp_host is defined) else 'N/A' }}
+          ====================================
 
     # ============================================================
     # FASE 1: GitOps (toggle policies + commit + push)
@@ -123,39 +90,25 @@
     - name: Ejecutar GitOps (toggle + commit + push)
       when: do_gitops | bool
       block:
-        - name: Actualizar scan_schedule si está definido
-          set_fact:
-            scan_schedule: "{{ scan_schedule }}"
-          when: 
-            - scan_schedule is defined
-            - scan_schedule | length > 0
-
-        - name: Actualizar scan_setting_name si está definido
-          set_fact:
-            scan_setting_name: "{{ scan_setting_name }}"
-          when: 
-            - scan_setting_name is defined
-            - scan_setting_name | length > 0
-
         - name: Ejecutar rol gitops_policy_update
           include_role:
             name: gitops_policy_update
           vars:
             github_user: "{{ github_user }}"
             github_token: "{{ github_token }}"
-            gitops_repo_path: "{{ gitops_repo_path }}"
+            gitops_repo_path: "{{ gitops_repo_path | default('/tmp/acm-policies') }}"
             gitops_repo_branch: "{{ gitops_repo_branch }}"
-            run_cis: "{{ run_cis }}"
-            run_pci: "{{ run_pci }}"
-            scan_remediation_action: "{{ scan_remediation_action }}"
-            install_operator_remediation_action: "{{ install_operator_remediation_action }}"
-            placement_label_key: "{{ placement_label_key }}"
-            placement_label_value: "{{ placement_label_value }}"
-            placement_use_matchlabels: "{{ placement_use_matchlabels }}"
-            scan_schedule: "{{ scan_schedule }}"
-            scan_setting_name: "{{ scan_setting_name }}"
-            cis_scan_enabled: "{{ run_cis }}"
-            pci_scan_enabled: "{{ run_pci }}"
+            run_cis: "{{ run_cis | default(true) }}"
+            run_pci: "{{ run_pci | default(false) }}"
+            scan_remediation_action: "{{ scan_remediation_action | default('inform') }}"
+            install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"
+            placement_label_key: "{{ placement_label_key | default('compliance') }}"
+            placement_label_value: "{{ placement_label_value | default('enabled') }}"
+            placement_use_matchlabels: "{{ placement_use_matchlabels | default(true) }}"
+            scan_schedule: "{{ scan_schedule | default('0 2 * * *') }}"
+            scan_setting_name: "{{ scan_setting_name | default('periodic-daily') }}"
+            cis_scan_enabled: "{{ run_cis | default(true) }}"
+            pci_scan_enabled: "{{ run_pci | default(false) }}"
 
         - name: Informar que GitOps se completó
           debug:
@@ -189,7 +142,7 @@
           vars:
             export_output_dir: "{{ export_output_dir }}"
             target_cluster_context: "{{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else '' }}"
-            managed_cluster_kubeconfigs: "{{ managed_cluster_kubeconfigs }}"
+            managed_cluster_kubeconfigs: "{{ managed_cluster_kubeconfigs | default({}) }}"
 
         - name: Informar que exportación se completó
           debug:
@@ -233,6 +186,11 @@
           when: 
             - mail_module_check.rc == 0
             - email_from is not defined or email_from == ""
+
+        - name: Establecer email_subject_prefix si no está definido
+          set_fact:
+            email_subject_prefix: "{{ email_subject_prefix | default('Reporte de Compliance') }}"
+          when: mail_module_check.rc == 0
 
         - name: Buscar archivo ZIP generado
           find:
@@ -296,7 +254,7 @@
         - name: Enviar reporte por correo (con ZIP si existe)
           mail:
             host: "{{ email_smtp_host }}"
-            port: "{{ email_smtp_port }}"
+            port: "{{ email_smtp_port | default(587) | int }}"
             username: "{{ email_smtp_username }}"
             password: "{{ email_smtp_password }}"
             to: "{{ email_to }}"
@@ -315,7 +273,7 @@
         - name: Enviar reporte por correo (solo summary si no hay ZIP)
           mail:
             host: "{{ email_smtp_host }}"
-            port: "{{ email_smtp_port }}"
+            port: "{{ email_smtp_port | default(587) | int }}"
             username: "{{ email_smtp_username }}"
             password: "{{ email_smtp_password }}"
             to: "{{ email_to }}"
@@ -335,7 +293,7 @@
         - name: Enviar reporte por correo (sin adjuntos si no hay archivos)
           mail:
             host: "{{ email_smtp_host }}"
-            port: "{{ email_smtp_port }}"
+            port: "{{ email_smtp_port | default(587) | int }}"
             username: "{{ email_smtp_username }}"
             password: "{{ email_smtp_password }}"
             to: "{{ email_to }}"
