@@ -91,22 +91,21 @@
       include_role:
         name: gitops_policy_update
       vars:
-        # Pasar todas las variables directamente (sin defaults hardcodeados)
+        # Pasar variables directamente del playbook
+        # Los defaults se manejan en el playbook o vienen de AAP
         github_token: "{{ github_token }}"
         github_user: "{{ github_user }}"
-        gitops_repo_path: "{{ gitops_repo_path | default('/tmp/acm-policies') }}"
+        gitops_repo_path: "{{ gitops_repo_path }}"
         gitops_repo_branch: "{{ gitops_repo_branch }}"
-        run_cis: "{{ run_cis | default(true) }}"
-        run_pci: "{{ run_pci | default(false) }}"
-        scan_remediation_action: "{{ scan_remediation_action | default('inform') }}"
-        install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"
-        placement_label_key: "{{ placement_label_key | default('compliance') }}"
-        placement_label_value: "{{ placement_label_value | default('enabled') }}"
-        placement_use_matchlabels: "{{ placement_use_matchlabels | default(true) }}"
-        scan_schedule: "{{ scan_schedule | default('0 2 * * *') }}"
-        scan_setting_name: "{{ scan_setting_name | default('periodic-daily') }}"
-        cis_scan_enabled: "{{ run_cis | default(true) }}"
-        pci_scan_enabled: "{{ run_pci | default(false) }}"
+        run_cis: "{{ run_cis }}"
+        run_pci: "{{ run_pci }}"
+        scan_remediation_action: "{{ scan_remediation_action }}"
+        install_operator_remediation_action: "{{ install_operator_remediation_action }}"
+        placement_label_key: "{{ placement_label_key }}"
+        placement_label_value: "{{ placement_label_value }}"
+        placement_use_matchlabels: "{{ placement_use_matchlabels }}"
+        scan_schedule: "{{ scan_schedule }}"
+        scan_setting_name: "{{ scan_setting_name }}"
       when: do_gitops | bool
 
     # ---------------------------------------------------------

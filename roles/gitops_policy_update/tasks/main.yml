@@ -11,87 +11,35 @@
 
 - name: Construir URL del repo GitOps
   set_fact:
-    gitops_repo_url: "https://{{ github_user | default('Snakerrrr') }}:{{ github_token }}@github.com/{{ github_user | default('Snakerrrr') }}/acm-policies.git"
-
-- name: Establecer valores para evitar recursión
-  set_fact:
-    _final_scan_remediation_action: "{{ scan_remediation_action if (scan_remediation_action is defined and scan_remediation_action != '') else 'inform' }}"
-    _final_install_operator_remediation_action: "{{ install_operator_remediation_action if (install_operator_remediation_action is defined and install_operator_remediation_action != '') else 'enforce' }}"
-    _final_gitops_repo_path: "{{ gitops_repo_path if (gitops_repo_path is defined and gitops_repo_path != '') else '/tmp/acm-policies' }}"
-    _final_gitops_repo_branch: "{{ gitops_repo_branch if (gitops_repo_branch is defined and gitops_repo_branch != '') else 'main' }}"
-    _final_scan_schedule: "0 1 * * *"
-    _final_scan_setting_name: default
-    _final_placement_label_key: compliance
-    _final_placement_label_value: enabled
-    _final_placement_use_matchlabels: true
-
-- name: Establecer valores booleanos para run_cis y run_pci
-  set_fact:
-    _final_run_cis: "{{ run_cis if run_cis is defined else true }}"
-    _final_run_pci: "{{ run_pci if run_pci is defined else true }}"
+    gitops_repo_url: "https://{{ github_user }}:{{ github_token }}@github.com/{{ github_user }}/acm-policies.git"
 
 - name: Clonar/actualizar repo GitOps (acm-policies)
   ansible.builtin.git:
     repo: "{{ gitops_repo_url }}"
-    dest: "{{ _final_gitops_repo_path }}"
-    version: "{{ _final_gitops_repo_branch }}"
+    dest: "{{ gitops_repo_path }}"
+    version: "{{ gitops_repo_branch }}"
     force: true
-
-- name: Actualizar scan_schedule si está definido
-  set_fact:
-    _final_scan_schedule: "{{ scan_schedule }}"
-  when: 
-    - scan_schedule is defined
-    - scan_schedule | length > 0
-
-- name: Actualizar scan_setting_name si está definido
-  set_fact:
-    _final_scan_setting_name: "{{ scan_setting_name }}"
-  when: 
-    - scan_setting_name is defined
-    - scan_setting_name | length > 0
-
-- name: Establecer valores por defecto para placement (sin recursión)
-  set_fact:
-    _final_placement_label_key: compliance
-    _final_placement_label_value: enabled
-    _final_placement_use_matchlabels: true
-
-- name: Actualizar placement_label_key si está definido
-  set_fact:
-    _final_placement_label_key: "{{ placement_label_key }}"
-  when:
-    - placement_label_key is defined
-    - placement_label_key | length > 0
-
-- name: Actualizar placement_label_value si está definido
-  set_fact:
-    _final_placement_label_value: "{{ placement_label_value }}"
-  when:
-    - placement_label_value is defined
-    - placement_label_value | length > 0
-
-- name: Actualizar placement_use_matchlabels si está definido
-  set_fact:
-    _final_placement_use_matchlabels: "{{ placement_use_matchlabels | bool }}"
-  when: placement_use_matchlabels is defined
 
 - name: Renderizar policy-generator-config.yaml vía toggle_policies
   include_role:
     name: toggle_policies
   vars:
-    cis_scan_enabled: "{{ _final_run_cis }}"
-    pci_scan_enabled: "{{ _final_run_pci }}"
-    gitops_repo_path: "{{ _final_gitops_repo_path }}"
-    placement_label_key: "{{ _final_placement_label_key }}"
-    placement_label_value: "{{ _final_placement_label_value }}"
-    scan_schedule: "{{ _final_scan_schedule }}"
-    scan_setting_name: "{{ _final_scan_setting_name }}"
+    # Pasar variables directamente del playbook (sin redefinirlas)
+    cis_scan_enabled: "{{ run_cis }}"
+    pci_scan_enabled: "{{ run_pci }}"
+    gitops_repo_path: "{{ gitops_repo_path }}"
+    placement_label_key: "{{ placement_label_key }}"
+    placement_label_value: "{{ placement_label_value }}"
+    placement_use_matchlabels: "{{ placement_use_matchlabels }}"
+    scan_schedule: "{{ scan_schedule }}"
+    scan_setting_name: "{{ scan_setting_name }}"
+    scan_remediation_action: "{{ scan_remediation_action }}"
+    install_operator_remediation_action: "{{ install_operator_remediation_action }}"
 
 - name: Verificar si hay cambios pendientes de commit
   command: git status --porcelain
   args:
-    chdir: "{{ _final_gitops_repo_path }}"
+    chdir: "{{ gitops_repo_path }}"
   register: git_status
   changed_when: false
 
@@ -102,7 +50,7 @@
 - name: Mostrar información del último commit
   command: git log -1 --oneline
   args:
-    chdir: "{{ _final_gitops_repo_path }}"
+    chdir: "{{ gitops_repo_path }}"
   register: last_commit
   changed_when: false
 
@@ -116,31 +64,31 @@
     - name: Configurar usuario Git para el commit
       command: git config user.name "ansible-bot"
       args:
-        chdir: "{{ _final_gitops_repo_path }}"
+        chdir: "{{ gitops_repo_path }}"
 
     - name: Configurar email Git para el commit
       command: git config user.email "ansible-bot@example.com"
       args:
-        chdir: "{{ _final_gitops_repo_path }}"
+        chdir: "{{ gitops_repo_path }}"
 
     - name: Agregar todos los cambios al staging
       command: git add -A
       args:
-        chdir: "{{ _final_gitops_repo_path }}"
+        chdir: "{{ gitops_repo_path }}"
 
     - name: Hacer commit
       command: >
         git commit -m
-        "Compliance GitOps update (CIS={{ _final_run_cis }},
-         PCI={{ _final_run_pci }},
-         remediation={{ _final_scan_remediation_action }})"
+        "Compliance GitOps update (CIS={{ run_cis }},
+         PCI={{ run_pci }},
+         remediation={{ scan_remediation_action }})"
       args:
-        chdir: "{{ _final_gitops_repo_path }}"
+        chdir: "{{ gitops_repo_path }}"
 
     - name: Hacer push (sin prompts)
-      command: git push origin "{{ _final_gitops_repo_branch }}"
+      command: git push origin "{{ gitops_repo_branch }}"
       args:
-        chdir: "{{ _final_gitops_repo_path }}"
+        chdir: "{{ gitops_repo_path }}"
       environment:
         GIT_TERMINAL_PROMPT: "0"
 
@@ -152,4 +100,3 @@
   when: git_status.stdout == ""
   debug:
     msg: "No hay cambios en el repo GitOps. Nada que commitear."
-
