@@ -38,9 +38,23 @@
       include_role:
         name: gitops_policy_update
       vars:
-        # Pasa tus variables necesarias para GitOps aquí
-        github_token: "{{ github_token | default('') }}"
-        # ... otras variables que requiera tu rol
+        # Prioridad para github_token:
+        # 1. Survey (github_token) - Si el usuario lo ingresa
+        # 2. Credential de Source Control (GIT_TOKEN o SCM_TOKEN) - Si está configurado en AAP
+        # 3. Default vacío
+        github_token: "{{ github_token | default(lookup('env', 'GIT_TOKEN') | default(lookup('env', 'SCM_TOKEN') | default(''))) }}"
+        github_user: "{{ github_user | default(lookup('env', 'GIT_USER') | default('Snakerrrr')) }}"
+        gitops_repo_path: "{{ gitops_repo_path | default('/tmp/acm-policies') }}"
+        gitops_repo_branch: "{{ gitops_repo_branch | default('main') }}"
+        run_cis: "{{ run_cis | default(true) }}"
+        run_pci: "{{ run_pci | default(false) }}"
+        scan_remediation_action: "{{ scan_remediation_action | default('inform') }}"
+        install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"
+        placement_label_key: "{{ placement_label_key | default('compliance') }}"
+        placement_label_value: "{{ placement_label_value | default('enabled') }}"
+        placement_use_matchlabels: "{{ placement_use_matchlabels | default(true) }}"
+        scan_schedule: "{{ scan_schedule | default('0 2 * * *') }}"
+        scan_setting_name: "{{ scan_setting_name | default('periodic-daily') }}"
       when: do_gitops | default(false) | bool
 
     # ---------------------------------------------------------

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Script para hacer commit y push rápido de cambios
 # Uso: ./scripts/commit-and-push.sh "mensaje del commit"
-
+git pull origin main  # <--- Agrega esto al principio del script
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
