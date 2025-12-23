@@ -7,6 +7,7 @@
     # --- CONFIGURACIÓN ESTRUCTURAL (Sin datos de usuario) ---
     # Solo dejamos rutas temporales que no dependen del usuario
     export_output_dir: "/tmp/compliance-reports"
+    gitops_repo_path: "/tmp/acm-policies"  # Ruta fija temporal, sin recursión
     
     # Defaults de seguridad (para que no falle si no se pasan)
     do_gitops: false
