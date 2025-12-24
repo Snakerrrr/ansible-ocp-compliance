@@ -2,16 +2,14 @@ apiVersion: policy.open-cluster-management.io/v1
 kind: PolicyGenerator
 metadata:
   name: compliance-operator-policies
-  # Comentario informativo
-  # Update: {{ ansible_date_time.date | default("hoy") }}
 
 policyDefaults:
   namespace: policies
-  remediationAction: enforce   # <--- CAMBIO 1: Forzar creación
+  remediationAction: enforce
   placement:
     labelSelector:
       matchLabels:
-        "{{ placement_label_key }}": "{{ placement_label_value }}"  # <--- CAMBIO 2: Usar etiqueta dinámica
+        "{{ placement_label_key }}": "{{ placement_label_value }}"
 
 policies:
   - name: install-compliance-operator
@@ -26,18 +24,14 @@ policies:
     manifests:
       - path: compliance-operator/scan-setting
 
-  # --- ESCANEO CIS ---
   - name: run-cis-scan
     remediationAction: enforce
-    # Si cis_scan_enabled es true -> disabled es false.
-    disabled: {{ not (cis_scan_enabled | bool) }}
+    disabled: {{ not (cis_scan_enabled | default(true) | bool) }}
     manifests:
       - path: compliance-operator/profiles/cis
 
-  # --- ESCANEO PCI ---
   - name: run-pci-scan
     remediationAction: enforce
-    # Si pci_scan_enabled es true -> disabled es false.
-    disabled: {{ not (pci_scan_enabled | bool) }}
+    disabled: {{ not (pci_scan_enabled | default(false) | bool) }}
     manifests:
       - path: compliance-operator/profiles/pci
