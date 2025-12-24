@@ -32,14 +32,67 @@
     state: directory
     mode: '0755'
 
-- name: Copiar resultados desde PVC al bastión usando tar
+# --- DIAGNÓSTICO DEL POD (Ver qué hay dentro antes de copiar) ---
+- name: 🕵️ DEBUG - Listar contenido dentro del Pod Extractor
+  command: >
+    oc exec -n openshift-compliance {{ pod_name }} -c extractor {{ oc_context_arg | default('') }} -- ls -R /results
+  register: pod_content
+  ignore_errors: true
+  environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
+
+- name: 🕵️ DEBUG - Mostrar qué ve Ansible en el Pod
+  debug:
+    msg: 
+      - "Contenido remoto en /results:"
+      - "{{ pod_content.stdout_lines if pod_content.stdout_lines is defined else ['No se pudo listar contenido'] }}"
+      - "RC del comando: {{ pod_content.rc | default('N/A') }}"
+  when: pod_content is defined
+
+# --- EXTRACCIÓN ROBUSTA (Múltiples métodos de respaldo) ---
+- name: Extraer resultados del PVC (Método 1: oc cp - Más estable)
+  shell: |
+    # Asegurar directorio local
+    mkdir -p "{{ compliance_reports_path }}/{{ pvc_name }}"
+    
+    # Intentar copiar usando 'oc cp' (más estable que tar pipe)
+    # Nota: oc cp no acepta --context directamente, usa KUBECONFIG del environment
+    oc cp openshift-compliance/{{ pod_name }}:/results "{{ compliance_reports_path }}/{{ pvc_name }}/" -c extractor
+  args:
+    executable: /bin/bash
+  register: copy_result_oc_cp
+  ignore_errors: true
+  environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
+  when: 
+    - pod_content.rc == 0
+    - pod_content.stdout_lines is defined
+    - pod_content.stdout_lines | length > 0
+
+- name: Extraer resultados del PVC (Método 2: tar pipe - Fallback)
   shell: |
     oc exec -n openshift-compliance {{ pod_name }} -c extractor {{ oc_context_arg | default('') }} -- tar czf - -C /results . | tar xzf - -C {{ compliance_reports_path }}/{{ pvc_name }}
   args:
     executable: /bin/bash
+  register: copy_result_tar
   ignore_errors: true
-  register: copy_result
   environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
+  when: 
+    - pod_content.rc == 0
+    - copy_result_oc_cp.rc != 0
+
+# --- VERIFICACIÓN LOCAL ---
+- name: 🕵️ DEBUG - Ver qué llegó realmente al Runner
+  command: "ls -R {{ compliance_reports_path }}/{{ pvc_name }}"
+  register: local_content
+  ignore_errors: true
+  changed_when: false
+
+- name: 🕵️ DEBUG - Mostrar contenido local descargado
+  debug:
+    msg: 
+      - "Archivos locales descargados:"
+      - "{{ local_content.stdout_lines if local_content.stdout_lines is defined else ['No se encontraron archivos'] }}"
+      - "Total de líneas: {{ local_content.stdout_lines | length | default(0) }}"
+  when: local_content is defined
 
 - name: Verificar que la copia fue exitosa
   stat:
@@ -48,7 +101,12 @@
 
 - name: Mostrar resultado de la copia
   debug:
-    msg: "{{ 'Copiado exitosamente' if copied_dir.stat.exists and copied_dir.stat.isdir else 'Error al copiar - directorio no encontrado' }}"
+    msg: |
+      {{ '✅ Copiado exitosamente' if (copied_dir.stat.exists and copied_dir.stat.isdir) else '❌ Error al copiar - directorio no encontrado' }}
+      
+      Método usado:
+      - oc cp: {{ '✅ Exitoso' if (copy_result_oc_cp.rc | default(999) == 0) else '❌ Falló' if copy_result_oc_cp is defined else '⏭️  No intentado' }}
+      - tar pipe: {{ '✅ Exitoso' if (copy_result_tar.rc | default(999) == 0) else '❌ Falló' if copy_result_tar is defined else '⏭️  No intentado' }}
 
 - name: Eliminar pod extractor
   command: oc delete pod {{ pod_name }} -n openshift-compliance {{ oc_context_arg | default('') }} --ignore-not-found=true
