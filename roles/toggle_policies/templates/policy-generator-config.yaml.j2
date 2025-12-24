@@ -29,16 +29,15 @@ policies:
   # --- ESCANEO CIS ---
   - name: run-cis-scan
     remediationAction: enforce
-    # CORRECCIÓN DE SINTAXIS: Agregadas comillas dobles externas "{{ ... }}"
     # Si cis_scan_enabled es true -> disabled es false.
-    disabled: "{{ 'false' if (cis_scan_enabled | bool) else 'true' }}"
+    disabled: {% if cis_scan_enabled | bool %}false{% else %}true{% endif %}
     manifests:
       - path: compliance-operator/profiles/cis
 
   # --- ESCANEO PCI ---
   - name: run-pci-scan
     remediationAction: enforce
-    # CORRECCIÓN DE SINTAXIS: Agregadas comillas dobles externas "{{ ... }}"
-    disabled: "{{ 'false' if (pci_scan_enabled | bool) else 'true' }}"
+    # Si pci_scan_enabled es true -> disabled es false.
+    disabled: {% if pci_scan_enabled | bool %}false{% else %}true{% endif %}
     manifests:
       - path: compliance-operator/profiles/pci
