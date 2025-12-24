@@ -94,18 +94,20 @@
       vars:
         # Pasar variables directamente del playbook
         # gitops_repo_path tiene default fijo en el rol, no necesita pasarse explícitamente
+        # NO pasar variables de forma recursiva - el rol manejará los defaults
         github_token: "{{ github_token }}"
         github_user: "{{ github_user }}"
         gitops_repo_branch: "{{ gitops_repo_branch }}"
-        run_cis: "{{ run_cis }}"
-        run_pci: "{{ run_pci }}"
-        scan_remediation_action: "{{ scan_remediation_action }}"
-        install_operator_remediation_action: "{{ install_operator_remediation_action }}"
-        placement_label_key: "{{ placement_label_key }}"
-        placement_label_value: "{{ placement_label_value }}"
-        placement_use_matchlabels: "{{ placement_use_matchlabels }}"
-        scan_schedule: "{{ scan_schedule }}"
-        scan_setting_name: "{{ scan_setting_name }}"
+        # Estas variables se pasan solo si están definidas (el rol manejará defaults)
+        run_cis: "{{ run_cis | default(true) | bool }}"
+        run_pci: "{{ run_pci | default(false) | bool }}"
+        scan_remediation_action: "{{ scan_remediation_action | default('inform') }}"
+        install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"
+        placement_label_key: "{{ placement_label_key | default('compliance') }}"
+        placement_label_value: "{{ placement_label_value | default('enabled') }}"
+        placement_use_matchlabels: "{{ placement_use_matchlabels | default(true) | bool }}"
+        scan_schedule: "{{ scan_schedule | default('0 2 * * *') }}"
+        scan_setting_name: "{{ scan_setting_name | default('periodic-daily') }}"
       when: do_gitops | bool
 
     # ---------------------------------------------------------

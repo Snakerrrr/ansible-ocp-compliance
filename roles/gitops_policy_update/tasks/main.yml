@@ -27,15 +27,16 @@
     # Pasar variables directamente del playbook
     # gitops_repo_path NO se pasa explícitamente - toggle_policies usará su default fijo
     # Ambos roles (gitops_policy_update y toggle_policies) tienen el mismo default: "/tmp/acm-policies"
-    cis_scan_enabled: "{{ run_cis }}"
-    pci_scan_enabled: "{{ run_pci }}"
-    placement_label_key: "{{ placement_label_key }}"
-    placement_label_value: "{{ placement_label_value }}"
-    placement_use_matchlabels: "{{ placement_use_matchlabels }}"
-    scan_schedule: "{{ scan_schedule }}"
-    scan_setting_name: "{{ scan_setting_name }}"
-    scan_remediation_action: "{{ scan_remediation_action }}"
-    install_operator_remediation_action: "{{ install_operator_remediation_action }}"
+    # Usar valores por defecto seguros si no están definidos (evitar recursión)
+    cis_scan_enabled: "{{ run_cis | default(true) | bool }}"
+    pci_scan_enabled: "{{ run_pci | default(false) | bool }}"
+    placement_label_key: "{{ placement_label_key | default('compliance') }}"
+    placement_label_value: "{{ placement_label_value | default('enabled') }}"
+    placement_use_matchlabels: "{{ placement_use_matchlabels | default(true) | bool }}"
+    scan_schedule: "{{ scan_schedule | default('0 2 * * *') }}"
+    scan_setting_name: "{{ scan_setting_name | default('periodic-daily') }}"
+    scan_remediation_action: "{{ scan_remediation_action | default('inform') }}"
+    install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"
 
 - name: Verificar si hay cambios pendientes de commit
   command: git status --porcelain
@@ -80,9 +81,9 @@
     - name: Hacer commit
       command: >
         git commit -m
-        "Compliance GitOps update (CIS={{ run_cis }},
-         PCI={{ run_pci }},
-         remediation={{ scan_remediation_action }})"
+        "Compliance GitOps update (CIS={{ run_cis | default(true) | bool }},
+         PCI={{ run_pci | default(false) | bool }},
+         remediation={{ scan_remediation_action | default('inform') }})"
       args:
         chdir: "{{ gitops_repo_path }}"
 
