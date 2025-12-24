@@ -371,10 +371,6 @@
     msg: "Advertencia: zip no está disponible. No se podrá crear el archivo ZIP. Instalar con: sudo apt-get install zip"
   when: zip_check.rc != 0
 
-- name: Definir directorio de salida (ya viene del playbook con nombre de cluster si aplica)
-  set_fact:
-    export_output_dir: "{{ export_output_dir | default('/tmp/compliance-reports') }}"
-
 - name: Crear directorio de salida (organizado por cluster)
   file:
     path: "{{ export_output_dir }}"

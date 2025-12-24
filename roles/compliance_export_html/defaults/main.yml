@@ -1,0 +1,14 @@
+---
+# Defaults del rol compliance_export_html
+# Valores fijos estructurales (sin recursión)
+# Estos valores pueden ser sobrescritos desde el playbook
+
+# Directorio de salida por defecto
+export_output_dir: "/tmp/compliance-reports"
+
+# Nombre del reporte HTML por defecto
+compliance_report_html_name: "compliance-report.html"
+
+# email_to NO tiene default aquí - debe venir del Survey/Extra Vars
+# Si se define aquí, causaría recursión o valores incorrectos
+
