@@ -449,69 +449,71 @@
     recurse: true
   register: html_files
 
-- name: Limpiar archivos intermedios
-  block:
-    - name: Eliminar archivos .bzip2
-      find:
-        paths: "{{ compliance_reports_path }}"
-        patterns: "*.bzip2"
-        recurse: true
-      register: bzip2_files
-
-    - name: Eliminar archivos .bzip2 encontrados
-      file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ bzip2_files.files }}"
-      when: bzip2_files.files | length > 0
-
-    - name: Eliminar archivos .bzip2.out
-      find:
-        paths: "{{ compliance_reports_path }}"
-        patterns: "*.bzip2.out"
-        recurse: true
-      register: bzip2_out_files
-
-    - name: Eliminar archivos .bzip2.out encontrados
-      file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ bzip2_out_files.files }}"
-      when: bzip2_out_files.files | length > 0
-
-    - name: Eliminar archivos .xml
-      find:
-        paths: "{{ compliance_reports_path }}"
-        patterns: "*.xml"
-        recurse: true
-      register: xml_files
-
-    - name: Eliminar archivos XML encontrados
-      file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ xml_files.files }}"
-      when: xml_files.files | length > 0
-
-    - name: Eliminar script temporal
-      file:
-        path: "{{ compliance_reports_path }}/render_reports.sh"
-        state: absent
-
-    - name: Eliminar directorios lost+found
-      find:
-        paths: "{{ compliance_reports_path }}"
-        patterns: "lost+found"
-        file_type: directory
-        recurse: true
-      register: lost_found_dirs
-
-    - name: Eliminar directorios lost+found encontrados
-      file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ lost_found_dirs.files }}"
-      ignore_errors: true
+# ❌ COMENTADO: Limpieza de archivos deshabilitada para permitir adjuntar archivos por correo
+# Los archivos se mantienen para que puedan ser adjuntados en el correo electrónico
+# - name: Limpiar archivos intermedios
+#   block:
+#     - name: Eliminar archivos .bzip2
+#       find:
+#         paths: "{{ compliance_reports_path }}"
+#         patterns: "*.bzip2"
+#         recurse: true
+#       register: bzip2_files
+#
+#     - name: Eliminar archivos .bzip2 encontrados
+#       file:
+#         path: "{{ item.path }}"
+#         state: absent
+#       loop: "{{ bzip2_files.files }}"
+#       when: bzip2_files.files | length > 0
+#
+#     - name: Eliminar archivos .bzip2.out
+#       find:
+#         paths: "{{ compliance_reports_path }}"
+#         patterns: "*.bzip2.out"
+#         recurse: true
+#       register: bzip2_out_files
+#
+#     - name: Eliminar archivos .bzip2.out encontrados
+#       file:
+#         path: "{{ item.path }}"
+#         state: absent
+#       loop: "{{ bzip2_out_files.files }}"
+#       when: bzip2_out_files.files | length > 0
+#
+#     - name: Eliminar archivos .xml
+#       find:
+#         paths: "{{ compliance_reports_path }}"
+#         patterns: "*.xml"
+#         recurse: true
+#       register: xml_files
+#
+#     - name: Eliminar archivos XML encontrados
+#       file:
+#         path: "{{ item.path }}"
+#         state: absent
+#       loop: "{{ xml_files.files }}"
+#       when: xml_files.files | length > 0
+#
+#     - name: Eliminar script temporal
+#       file:
+#         path: "{{ compliance_reports_path }}/render_reports.sh"
+#         state: absent
+#
+#     - name: Eliminar directorios lost+found
+#       find:
+#         paths: "{{ compliance_reports_path }}"
+#         patterns: "lost+found"
+#         file_type: directory
+#         recurse: true
+#       register: lost_found_dirs
+#
+#     - name: Eliminar directorios lost+found encontrados
+#       file:
+#         path: "{{ item.path }}"
+#         state: absent
+#       loop: "{{ lost_found_dirs.files }}"
+#       ignore_errors: true
 
 - name: Generar summary.txt
   template:
@@ -530,25 +532,31 @@
       - "Variable do_send_email: {{ do_send_email }}"
       - "Variable email_to: {{ email_to }}"
       - "Ruta de reportes: {{ compliance_reports_path }}"
-      - "Archivos HTML encontrados: {{ html_files.files | length }}"
+      - "Cluster context: {{ target_cluster_context | default(inventory_hostname) }}"
 
-- name: Buscar todos los archivos HTML generados
+# --- BÚSQUEDA DE EVIDENCIAS (HTML o RAW) ---
+- name: Buscar archivos para adjuntar
   find:
     paths: "{{ compliance_reports_path }}"
-    patterns: "*.html"
+    patterns: 
+      - "*.html"       # Lo ideal
+      - "summary.txt"  # El resumen
+      - "*.xml"        # La evidencia cruda (si falla el HTML)
+      - "*.bzip2"      # Comprimidos originales
     recurse: true
     file_type: file
-  register: html_files_for_email
+  register: attachments_found
   when: do_send_email | bool
 
-- name: 🐛 DEBUG - Archivos HTML encontrados
+# --- DEBUG: Confirmar qué tenemos ---
+- name: 🐛 DEBUG - Archivos encontrados para enviar
   debug:
-    msg:
-      - "Total de archivos HTML: {{ html_files_for_email.files | length }}"
-      - "Archivos: {{ html_files_for_email.files | map(attribute='path') | list }}"
+    msg: 
+      - "Total de archivos encontrados: {{ attachments_found.files | length }}"
+      - "Archivos: {{ attachments_found.files | map(attribute='path') | list }}"
   when: 
     - do_send_email | bool
-    - html_files_for_email is defined
+    - attachments_found is defined
 
 # --- TAREA DE ENVÍO DE CORREO CORREGIDA ---
 - name: Enviar reporte de Compliance por correo electrónico
@@ -561,18 +569,18 @@
     to: "{{ email_to }}"
     subject: "{{ email_subject_prefix }} - Cluster: {{ target_cluster_context | default(inventory_hostname) }}"
     body: |
-      Se adjuntan los reportes de cumplimiento generados automáticamente.
+      Adjunto reporte de compliance.
       
-      Total de reportes HTML: {{ html_files_for_email.files | length }}
+      Total de archivos adjuntos: {{ attachments_found.files | length }}
       
-      Revise los archivos HTML adjuntos para ver los resultados detallados.
-    # IMPORTANTE: Adjuntar todos los archivos HTML generados
-    attach: "{{ html_files_for_email.files | map(attribute='path') | list }}"
+      Si no visualiza el HTML, revise los archivos XML adjuntos.
+    # IMPORTANTE: Adjuntar todos los archivos encontrados (HTML, XML, summary, bzip2)
+    attach: "{{ attachments_found.files | map(attribute='path') | list }}"
     secure: starttls
   delegate_to: localhost
   # Esta condición debe cumplirse. Si do_send_email es false, se saltará.
   when: 
     - do_send_email | bool
-    - html_files_for_email is defined
-    - html_files_for_email.files | length > 0
+    - attachments_found is defined
+    - attachments_found.files | length > 0
   ignore_errors: true # Para ver el error SMTP si falla la contraseña
