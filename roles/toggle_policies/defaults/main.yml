@@ -1,0 +1,8 @@
+---
+# Defaults del rol toggle_policies
+# Valores fijos estructurales (sin recursión)
+# Estos valores pueden ser sobrescritos desde el rol que llama
+
+# Ruta temporal para el repo GitOps
+gitops_repo_path: "/tmp/acm-policies"
+

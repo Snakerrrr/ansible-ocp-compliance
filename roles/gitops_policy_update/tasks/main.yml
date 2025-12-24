@@ -25,10 +25,11 @@
     name: toggle_policies
   vars:
     # Pasar variables directamente del playbook
-    # gitops_repo_path tiene default fijo en este rol, se pasa automáticamente
+    # gitops_repo_path ya está disponible en el scope (viene del playbook o default del rol)
+    # Se pasa explícitamente para asegurar que toggle_policies use el mismo valor
+    gitops_repo_path: "{{ gitops_repo_path }}"
     cis_scan_enabled: "{{ run_cis }}"
     pci_scan_enabled: "{{ run_pci }}"
-    gitops_repo_path: "{{ gitops_repo_path }}"
     placement_label_key: "{{ placement_label_key }}"
     placement_label_value: "{{ placement_label_value }}"
     placement_use_matchlabels: "{{ placement_use_matchlabels }}"
