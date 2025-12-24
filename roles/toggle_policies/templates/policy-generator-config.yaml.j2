@@ -2,6 +2,7 @@ apiVersion: policy.open-cluster-management.io/v1
 kind: PolicyGenerator
 metadata:
   name: compliance-operator-policies
+  # ELIMINADO: ansible_date_time (Causa probable del crash)
 
 policyDefaults:
   namespace: policies
@@ -9,6 +10,7 @@ policyDefaults:
   placement:
     labelSelector:
       matchLabels:
+        # Usamos sintaxis segura para diccionarios
         "{{ placement_label_key }}": "{{ placement_label_value }}"
 
 policies:
@@ -24,14 +26,18 @@ policies:
     manifests:
       - path: compliance-operator/scan-setting
 
+  # --- ESCANEO CIS ---
   - name: run-cis-scan
     remediationAction: enforce
-    disabled: {{ not (cis_scan_enabled | default(true) | bool) }}
+    # Usamos filtro 'bool' para asegurar que sea true/false (minúscula)
+    disabled: {{ cis_disabled | default(false) | bool }}
     manifests:
       - path: compliance-operator/profiles/cis
 
+  # --- ESCANEO PCI ---
   - name: run-pci-scan
     remediationAction: enforce
-    disabled: {{ not (pci_scan_enabled | default(false) | bool) }}
+    # Usamos filtro 'bool' para asegurar que sea true/false (minúscula)
+    disabled: {{ pci_disabled | default(true) | bool }}
     manifests:
       - path: compliance-operator/profiles/pci

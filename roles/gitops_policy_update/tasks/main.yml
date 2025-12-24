@@ -27,9 +27,9 @@
     # Pasar variables directamente del playbook
     # gitops_repo_path NO se pasa explícitamente - toggle_policies usará su default fijo
     # Ambos roles (gitops_policy_update y toggle_policies) tienen el mismo default: "/tmp/acm-policies"
-    # Usar valores por defecto seguros si no están definidos (evitar recursión)
-    cis_scan_enabled: "{{ run_cis | default(true) | bool }}"
-    pci_scan_enabled: "{{ run_pci | default(false) | bool }}"
+    # Convertir run_cis/run_pci a cis_disabled/pci_disabled (invertir lógica)
+    cis_disabled: "{{ not (run_cis | default(true) | bool) }}"
+    pci_disabled: "{{ not (run_pci | default(false) | bool) }}"
     placement_label_key: "{{ placement_label_key | default('compliance') }}"
     placement_label_value: "{{ placement_label_value | default('enabled') }}"
     placement_use_matchlabels: "{{ placement_use_matchlabels | default(true) | bool }}"

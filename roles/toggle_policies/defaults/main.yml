@@ -1,17 +1,14 @@
 ---
 # Defaults del rol toggle_policies
-# Valores fijos estructurales (sin recursión)
-# Estos valores pueden ser sobrescritos desde el rol que llama
 
-# Ruta temporal para el repo GitOps
+# Ruta temporal
 gitops_repo_path: "/tmp/acm-policies"
 
-# Defaults para etiquetas de Placement (Evita error si faltan en AAP)
+# Etiquetas
 placement_label_key: "compliance"
 placement_label_value: "enabled"
 
-# Defaults para activar/desactivar escaneos
-# Usamos nombres distintos a 'run_cis' para evitar el bucle infinito
-cis_scan_enabled: true
-pci_scan_enabled: false
+# Definición de estado (Booleano puro)
+cis_disabled: false
+pci_disabled: true
 
