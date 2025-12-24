@@ -67,7 +67,7 @@
     - pod_content.stdout_lines is defined
     - pod_content.stdout_lines | length > 0
 
-- name: Extraer resultados del PVC (Método 2: tar pipe - Fallback)
+- name: Extraer resultados del PVC (Metodo 2 - tar pipe - Fallback)
   shell: |
     oc exec -n openshift-compliance {{ pod_name }} -c extractor {{ oc_context_arg | default('') }} -- tar czf - -C /results . | tar xzf - -C {{ compliance_reports_path }}/{{ pvc_name }}
   args:
