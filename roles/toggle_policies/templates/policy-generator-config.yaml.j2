@@ -3,7 +3,7 @@ kind: PolicyGenerator
 metadata:
   name: compliance-operator-policies
   # Comentario informativo
-  # Update: {{ ansible_date_time.date | default('hoy') }}
+  # Update: {{ ansible_date_time.date | default("hoy") }}
 
 policyDefaults:
   namespace: policies
@@ -30,7 +30,7 @@ policies:
   - name: run-cis-scan
     remediationAction: enforce
     # Si cis_scan_enabled es true -> disabled es false.
-    disabled: {% if cis_scan_enabled | bool %}false{% else %}true{% endif %}
+    disabled: {{ not (cis_scan_enabled | bool) }}
     manifests:
       - path: compliance-operator/profiles/cis
 
@@ -38,6 +38,6 @@ policies:
   - name: run-pci-scan
     remediationAction: enforce
     # Si pci_scan_enabled es true -> disabled es false.
-    disabled: {% if pci_scan_enabled | bool %}false{% else %}true{% endif %}
+    disabled: {{ not (pci_scan_enabled | bool) }}
     manifests:
       - path: compliance-operator/profiles/pci
