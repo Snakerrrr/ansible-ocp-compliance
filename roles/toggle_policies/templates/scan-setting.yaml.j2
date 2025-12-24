@@ -5,8 +5,8 @@ apiVersion: compliance.openshift.io/v1alpha1
 kind: ScanSetting
 metadata:
   # Te recomiendo usar un nombre distinto a 'default' para evitar conflictos
-  name: {{ scan_setting_name | default('periodic-daily') }}
-  namespace: {{ compliance_namespace | default('openshift-compliance') }}
+  name: "{{ scan_setting_name | default('periodic-daily') }}"
+  namespace: "{{ compliance_namespace | default('openshift-compliance') }}"
 # --- INICIO DE CONFIGURACIÓN (Sin 'spec:') ---
 schedule: "{{ scan_schedule | default('0 2 * * *') }}"
 

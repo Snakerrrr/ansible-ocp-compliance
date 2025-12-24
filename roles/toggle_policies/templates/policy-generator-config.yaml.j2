@@ -11,7 +11,7 @@ policyDefaults:
   placement:
     labelSelector:
       matchLabels:
-        {{ placement_label_key }}: "{{ placement_label_value }}"  # <--- CAMBIO 2: Usar etiqueta dinámica
+        "{{ placement_label_key }}": "{{ placement_label_value }}"  # <--- CAMBIO 2: Usar etiqueta dinámica
 
 policies:
   - name: install-compliance-operator
@@ -30,12 +30,12 @@ policies:
   - name: run-cis-scan
     remediationAction: enforce
     # Aquí Ansible decide si activa o desactiva según tus variables
-    disabled: {{ not (cis_scan_enabled | default(true) | bool) }}
+    disabled: {{ 'true' if not (cis_scan_enabled | default(true) | bool) else 'false' }}
     manifests:
       - path: compliance-operator/profiles/cis
 
   - name: run-pci-scan
     remediationAction: enforce
-    disabled: {{ not (pci_scan_enabled | default(false) | bool) }}
+    disabled: {{ 'true' if not (pci_scan_enabled | default(false) | bool) else 'false' }}
     manifests:
       - path: compliance-operator/profiles/pci
