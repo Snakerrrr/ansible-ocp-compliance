@@ -517,40 +517,62 @@
   template:
     src: summary.txt.j2
     dest: "{{ compliance_reports_path }}/summary.txt"
+    mode: '0644'
   vars:
     cis_pvcs: "{{ cis_pvcs }}"
     pci_pvcs: "{{ pci_pvcs }}"
     compliance_reports_path: "{{ compliance_reports_path }}"
 
-- name: Crear ZIP con HTMLs y summary
-  shell: |
-    cd "{{ compliance_reports_path }}"
-    find . -type f \( -name "*.html" -o -name "summary.txt" \) | zip -@ "compliance-reports-{{ ansible_date_time.epoch }}.zip"
-  args:
-    executable: /bin/bash
-  register: zip_creation
-  changed_when: zip_creation.rc == 0
-  failed_when: zip_check.rc != 0 and zip_creation.rc != 0
-  when: zip_check.rc == 0
+# --- VERIFICACIÓN DE DEBUG (Para saber por qué no llega el correo) ---
+- name: 🐛 DEBUG - Estado previo al correo
+  debug:
+    msg:
+      - "Variable do_send_email: {{ do_send_email }}"
+      - "Variable email_to: {{ email_to }}"
+      - "Ruta de reportes: {{ compliance_reports_path }}"
+      - "Archivos HTML encontrados: {{ html_files.files | length }}"
 
-- name: Verificar estructura final
+- name: Buscar todos los archivos HTML generados
   find:
     paths: "{{ compliance_reports_path }}"
-    file_type: file
+    patterns: "*.html"
     recurse: true
-  register: final_files
+    file_type: file
+  register: html_files_for_email
+  when: do_send_email | bool
 
-- name: Mostrar resumen final
+- name: 🐛 DEBUG - Archivos HTML encontrados
   debug:
-    msg: |
-      ✅ Reportes de compliance exportados exitosamente:
+    msg:
+      - "Total de archivos HTML: {{ html_files_for_email.files | length }}"
+      - "Archivos: {{ html_files_for_email.files | map(attribute='path') | list }}"
+  when: 
+    - do_send_email | bool
+    - html_files_for_email is defined
+
+# --- TAREA DE ENVÍO DE CORREO CORREGIDA ---
+- name: Enviar reporte de Compliance por correo electrónico
+  community.general.mail:
+    host: "{{ email_smtp_host }}"
+    port: "{{ email_smtp_port }}"
+    username: "{{ email_smtp_username }}"
+    password: "{{ email_smtp_password }}"
+    from: "{{ email_from }}"
+    to: "{{ email_to }}"
+    subject: "{{ email_subject_prefix }} - Cluster: {{ target_cluster_context | default(inventory_hostname) }}"
+    body: |
+      Se adjuntan los reportes de cumplimiento generados automáticamente.
       
-      📊 Resumen:
-      - Archivos HTML generados: {{ html_files.files | length }}
-      - Archivos totales: {{ final_files.files | length }}
+      Total de reportes HTML: {{ html_files_for_email.files | length }}
       
-      📁 Ubicación: {{ compliance_reports_path }}
-      {% if zip_check.rc == 0 %}
-      - ZIP: {{ compliance_reports_path }}/compliance-reports-{{ ansible_date_time.epoch }}.zip
-      {% endif %}
-      - Summary: {{ compliance_reports_path }}/summary.txt
+      Revise los archivos HTML adjuntos para ver los resultados detallados.
+    # IMPORTANTE: Adjuntar todos los archivos HTML generados
+    attach: "{{ html_files_for_email.files | map(attribute='path') | list }}"
+    secure: starttls
+  delegate_to: localhost
+  # Esta condición debe cumplirse. Si do_send_email es false, se saltará.
+  when: 
+    - do_send_email | bool
+    - html_files_for_email is defined
+    - html_files_for_email.files | length > 0
+  ignore_errors: true # Para ver el error SMTP si falla la contraseña
