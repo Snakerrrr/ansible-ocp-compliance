@@ -607,7 +607,8 @@
       - "Cluster context: {{ target_cluster_context | default(inventory_hostname) }}"
 
 # --- BÚSQUEDA DE EVIDENCIAS (HTML o RAW) ---
-- name: Buscar archivos para adjuntar
+# --- BÚSQUEDA RECURSIVA DE ARCHIVOS PARA CORREO (Modo Aspiradora) ---
+- name: Buscar archivos para adjuntar (Recursivo - Busca en todas las subcarpetas)
   find:
     paths: "{{ compliance_reports_path }}"
     patterns: 
@@ -615,7 +616,8 @@
       - "summary.txt"  # El resumen
       - "*.xml"        # La evidencia cruda (si falla el HTML)
       - "*.bzip2"      # Comprimidos originales
-    recurse: true
+      - "*.arf"        # Archivos ARF (formato alternativo)
+    recurse: yes       # <--- ¡ESTA ES LA CLAVE! Busca en todas las subcarpetas (3/, 4/, 5/, etc.)
     file_type: file
   register: attachments_found
   when: do_send_email | bool
