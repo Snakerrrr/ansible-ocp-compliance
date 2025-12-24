@@ -2,8 +2,8 @@ apiVersion: policy.open-cluster-management.io/v1
 kind: PolicyGenerator
 metadata:
   name: compliance-operator-policies
-  # Esta fecha se actualiza sola con Ansible
-  # Última actualización: {{ ansible_date_time.iso8601 }}
+  # Comentario informativo
+  # Update: {{ ansible_date_time.date | default('hoy') }}
 
 policyDefaults:
   namespace: policies
@@ -26,16 +26,19 @@ policies:
     manifests:
       - path: compliance-operator/scan-setting
 
-  # Mantener la lógica dinámica de Ansible para activar/desactivar escaneos
+  # --- ESCANEO CIS ---
   - name: run-cis-scan
     remediationAction: enforce
-    # Aquí Ansible decide si activa o desactiva según tus variables
-    disabled: {{ 'true' if not (cis_scan_enabled | default(true) | bool) else 'false' }}
+    # CORRECCIÓN DE SINTAXIS: Agregadas comillas dobles externas "{{ ... }}"
+    # Si cis_scan_enabled es true -> disabled es false.
+    disabled: "{{ 'false' if (cis_scan_enabled | bool) else 'true' }}"
     manifests:
       - path: compliance-operator/profiles/cis
 
+  # --- ESCANEO PCI ---
   - name: run-pci-scan
     remediationAction: enforce
-    disabled: {{ 'true' if not (pci_scan_enabled | default(false) | bool) else 'false' }}
+    # CORRECCIÓN DE SINTAXIS: Agregadas comillas dobles externas "{{ ... }}"
+    disabled: "{{ 'false' if (pci_scan_enabled | bool) else 'true' }}"
     manifests:
       - path: compliance-operator/profiles/pci
