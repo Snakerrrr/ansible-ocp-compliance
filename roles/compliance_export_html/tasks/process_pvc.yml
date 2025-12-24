@@ -49,7 +49,7 @@
   when: pod_content is defined
 
 # --- EXTRACCIÓN ROBUSTA (Múltiples métodos de respaldo) ---
-- name: Extraer resultados del PVC (Método 1: oc cp - Más estable)
+- name: Extraer resultados del PVC (Metodo 1 - oc cp - Mas estable)
   shell: |
     # Asegurar directorio local
     mkdir -p "{{ compliance_reports_path }}/{{ pvc_name }}"

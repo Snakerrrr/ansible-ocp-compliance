@@ -412,9 +412,10 @@
   include_tasks: process_pvc.yml
   loop: "{{ cis_pvcs }}"
   loop_control:
-    label: "{{ item }}"
+    loop_var: pvc_item
+    label: "{{ pvc_item }}"
   vars:
-    pvc_name: "{{ item }}"
+    pvc_name: "{{ pvc_item }}"
     pvc_type: "cis"
     oc_context_arg: "{{ _final_oc_context_arg }}"
     managed_cluster_kubeconfig_path: "{{ _final_managed_cluster_kubeconfig_path }}"
@@ -424,9 +425,10 @@
   include_tasks: process_pvc.yml
   loop: "{{ pci_pvcs }}"
   loop_control:
-    label: "{{ item }}"
+    loop_var: pvc_item
+    label: "{{ pvc_item }}"
   vars:
-    pvc_name: "{{ item }}"
+    pvc_name: "{{ pvc_item }}"
     pvc_type: "pci"
     oc_context_arg: "{{ _final_oc_context_arg }}"
     managed_cluster_kubeconfig_path: "{{ _final_managed_cluster_kubeconfig_path }}"
