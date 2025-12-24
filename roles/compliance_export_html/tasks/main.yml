@@ -608,34 +608,54 @@
       - "Ruta de reportes: {{ compliance_reports_path }}"
       - "Cluster context: {{ target_cluster_context | default(inventory_hostname) }}"
 
-# --- BÚSQUEDA DE EVIDENCIAS (HTML o RAW) ---
-# --- BÚSQUEDA RECURSIVA DE ARCHIVOS PARA CORREO (Modo Aspiradora) ---
-- name: Buscar archivos para adjuntar (Recursivo - Busca en todas las subcarpetas)
+# --- EMPAQUETADO (Solución para evitar límite de tamaño de Gmail) ---
+
+- name: Buscar archivos HTML y summary para comprimir
   find:
     paths: "{{ compliance_reports_path }}"
     patterns: 
-      - "*.html"       # Lo ideal
-      - "summary.txt"  # El resumen
-      - "*.xml"        # La evidencia cruda (si falla el HTML)
-      - "*.bzip2"      # Comprimidos originales
-      - "*.arf"        # Archivos ARF (formato alternativo)
-    recurse: yes       # <--- ¡ESTA ES LA CLAVE! Busca en todas las subcarpetas (3/, 4/, 5/, etc.)
+      - "*.html"       # Solo HTMLs (excluimos XML pesados)
+      - "summary.txt"   # El resumen
+    recurse: yes        # Busca en todas las subcarpetas (3/, 4/, 5/, etc.)
     file_type: file
-  register: attachments_found
+  register: files_to_zip
   when: do_send_email | bool
 
-# --- DEBUG: Confirmar qué tenemos ---
-- name: 🐛 DEBUG - Archivos encontrados para enviar
+- name: 🔍 DEBUG - Archivos encontrados para comprimir
   debug:
     msg: 
-      - "Total de archivos encontrados: {{ attachments_found.files | length }}"
-      - "Archivos: {{ attachments_found.files | map(attribute='path') | list }}"
+      - "Total de archivos para comprimir: {{ files_to_zip.files | length }}"
+      - "Archivos HTML: {{ files_to_zip.files | selectattr('path', 'match', '.*\\.html$') | list | length }}"
+      - "Archivos summary: {{ files_to_zip.files | selectattr('path', 'match', '.*summary\\.txt$') | list | length }}"
   when: 
     - do_send_email | bool
-    - attachments_found is defined
+    - files_to_zip is defined
 
-# --- TAREA DE ENVÍO DE CORREO CORREGIDA ---
-- name: Enviar reporte de Compliance por correo electrónico
+- name: Comprimir reportes HTML y Resumen en un ZIP
+  community.general.archive:
+    path: "{{ files_to_zip.files | map(attribute='path') | list }}"
+    dest: "{{ compliance_reports_path }}/compliance_reports_{{ target_cluster_context | default(inventory_hostname) }}_{{ ansible_date_time.epoch }}.zip"
+    format: zip
+    mode: '0644'
+  register: zip_creation
+  when: 
+    - do_send_email | bool
+    - files_to_zip is defined
+    - files_to_zip.files | length > 0
+
+- name: 🔍 DEBUG - Verificar archivo ZIP creado
+  debug:
+    msg: 
+      - "Archivo ZIP creado: {{ zip_creation.dest }}"
+      - "Estado: {{ zip_creation.state }}"
+      - "Tamaño: {{ zip_creation.size | default('N/A') }} bytes"
+  when: 
+    - do_send_email | bool
+    - zip_creation is defined
+
+# --- ENVÍO DE CORREO OPTIMIZADO ---
+
+- name: Enviar reporte de Compliance (ZIP) por correo electrónico
   community.general.mail:
     host: "{{ email_smtp_host }}"
     port: "{{ email_smtp_port }}"
@@ -643,20 +663,27 @@
     password: "{{ email_smtp_password }}"
     from: "{{ email_from }}"
     to: "{{ email_to }}"
-    subject: "{{ email_subject_prefix }} - Cluster: {{ target_cluster_context | default(inventory_hostname) }}"
+    subject: "{{ email_subject_prefix }} - Cluster: {{ target_cluster_context | default(inventory_hostname) }} (Reporte Completo)"
     body: |
-      Adjunto reporte de compliance.
+      Hola,
       
-      Total de archivos adjuntos: {{ attachments_found.files | length }}
+      Se adjunta el reporte de cumplimiento consolidado.
       
-      Si no visualiza el HTML, revise los archivos XML adjuntos.
-    # IMPORTANTE: Adjuntar todos los archivos encontrados (HTML, XML, summary, bzip2)
-    attach: "{{ attachments_found.files | map(attribute='path') | list }}"
+      📦 Contenido del ZIP:
+      - Reportes detallados en formato HTML ({{ files_to_zip.files | selectattr('path', 'match', '.*\\.html$') | list | length }} archivos).
+      - Resumen de ejecución (summary.txt).
+      
+      Nota: Los archivos XML crudos permanecen en el servidor para auditoría si fueran necesarios.
+      
+      Saludos,
+      Equipo de Automatización.
+    # ADJUNTAMOS SOLO EL ZIP
+    attach:
+      - "{{ zip_creation.dest }}"
     secure: starttls
   delegate_to: localhost
-  # Esta condición debe cumplirse. Si do_send_email es false, se saltará.
   when: 
     - do_send_email | bool
-    - attachments_found is defined
-    - attachments_found.files | length > 0
+    - zip_creation is defined
+    - zip_creation.state == 'file'
   ignore_errors: true # Para ver el error SMTP si falla la contraseña
