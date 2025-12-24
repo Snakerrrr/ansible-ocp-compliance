@@ -119,8 +119,8 @@
       vars:
         # INYECCIÓN DINÁMICA DE CONTEXTO
         target_cluster_context: "{{ item }}"
-        # Forzamos la creación de subcarpetas para no sobrescribir
-        export_output_dir: "{{ export_output_dir }}/{{ item }}"
+        # Mapear export_output_dir del playbook a compliance_reports_path del rol
+        compliance_reports_path: "{{ export_output_dir | default('/tmp/compliance-reports') }}/{{ item }}"
       loop: "{{ target_clusters_list }}"
       loop_control:
         loop_var: item

@@ -373,7 +373,7 @@
 
 - name: Crear directorio de salida (organizado por cluster)
   file:
-    path: "{{ export_output_dir }}"
+    path: "{{ compliance_reports_path }}"
     state: directory
     mode: '0755'
     recurse: yes
@@ -431,20 +431,20 @@
 - name: Renderizar script de conversión XML → HTML
   template:
     src: render_reports.sh.j2
-    dest: "{{ export_output_dir }}/render_reports.sh"
+    dest: "{{ compliance_reports_path }}/render_reports.sh"
     mode: '0755'
 
 - name: Ejecutar conversión XML → HTML
-  command: "{{ export_output_dir }}/render_reports.sh"
+  command: "{{ compliance_reports_path }}/render_reports.sh"
   args:
-    chdir: "{{ export_output_dir }}"
+    chdir: "{{ compliance_reports_path }}"
   register: render_script_output
   changed_when: render_script_output.rc == 0
   failed_when: false
 
 - name: Verificar archivos HTML generados
   find:
-    paths: "{{ export_output_dir }}"
+    paths: "{{ compliance_reports_path }}"
     patterns: "*.html"
     recurse: true
   register: html_files
@@ -453,7 +453,7 @@
   block:
     - name: Eliminar archivos .bzip2
       find:
-        paths: "{{ export_output_dir }}"
+        paths: "{{ compliance_reports_path }}"
         patterns: "*.bzip2"
         recurse: true
       register: bzip2_files
@@ -467,7 +467,7 @@
 
     - name: Eliminar archivos .bzip2.out
       find:
-        paths: "{{ export_output_dir }}"
+        paths: "{{ compliance_reports_path }}"
         patterns: "*.bzip2.out"
         recurse: true
       register: bzip2_out_files
@@ -481,7 +481,7 @@
 
     - name: Eliminar archivos .xml
       find:
-        paths: "{{ export_output_dir }}"
+        paths: "{{ compliance_reports_path }}"
         patterns: "*.xml"
         recurse: true
       register: xml_files
@@ -495,12 +495,12 @@
 
     - name: Eliminar script temporal
       file:
-        path: "{{ export_output_dir }}/render_reports.sh"
+        path: "{{ compliance_reports_path }}/render_reports.sh"
         state: absent
 
     - name: Eliminar directorios lost+found
       find:
-        paths: "{{ export_output_dir }}"
+        paths: "{{ compliance_reports_path }}"
         patterns: "lost+found"
         file_type: directory
         recurse: true
@@ -516,15 +516,15 @@
 - name: Generar summary.txt
   template:
     src: summary.txt.j2
-    dest: "{{ export_output_dir }}/summary.txt"
+    dest: "{{ compliance_reports_path }}/summary.txt"
   vars:
     cis_pvcs: "{{ cis_pvcs }}"
     pci_pvcs: "{{ pci_pvcs }}"
-    export_output_dir: "{{ export_output_dir }}"
+    compliance_reports_path: "{{ compliance_reports_path }}"
 
 - name: Crear ZIP con HTMLs y summary
   shell: |
-    cd "{{ export_output_dir }}"
+    cd "{{ compliance_reports_path }}"
     find . -type f \( -name "*.html" -o -name "summary.txt" \) | zip -@ "compliance-reports-{{ ansible_date_time.epoch }}.zip"
   args:
     executable: /bin/bash
@@ -535,7 +535,7 @@
 
 - name: Verificar estructura final
   find:
-    paths: "{{ export_output_dir }}"
+    paths: "{{ compliance_reports_path }}"
     file_type: file
     recurse: true
   register: final_files
@@ -549,8 +549,8 @@
       - Archivos HTML generados: {{ html_files.files | length }}
       - Archivos totales: {{ final_files.files | length }}
       
-      📁 Ubicación: {{ export_output_dir }}
+      📁 Ubicación: {{ compliance_reports_path }}
       {% if zip_check.rc == 0 %}
-      - ZIP: {{ export_output_dir }}/compliance-reports-{{ ansible_date_time.epoch }}.zip
+      - ZIP: {{ compliance_reports_path }}/compliance-reports-{{ ansible_date_time.epoch }}.zip
       {% endif %}
-      - Summary: {{ export_output_dir }}/summary.txt
+      - Summary: {{ compliance_reports_path }}/summary.txt

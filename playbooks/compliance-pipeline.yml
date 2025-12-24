@@ -141,7 +141,8 @@
           include_role:
             name: compliance_export_html
           vars:
-            export_output_dir: "{{ export_output_dir }}"
+            # Mapear export_output_dir del playbook a compliance_reports_path del rol
+            compliance_reports_path: "{{ export_output_dir | default('/tmp/compliance-reports') }}"
             target_cluster_context: "{{ target_cluster_context if (target_cluster_context is defined and target_cluster_context != '') else '' }}"
             managed_cluster_kubeconfigs: "{{ managed_cluster_kubeconfigs | default({}) }}"
 

@@ -28,13 +28,13 @@
 
 - name: Crear directorio de destino en el bastión
   file:
-    path: "{{ export_output_dir }}/{{ pvc_name }}"
+    path: "{{ compliance_reports_path }}/{{ pvc_name }}"
     state: directory
     mode: '0755'
 
 - name: Copiar resultados desde PVC al bastión usando tar
   shell: |
-    oc exec -n openshift-compliance {{ pod_name }} -c extractor {{ oc_context_arg | default('') }} -- tar czf - -C /results . | tar xzf - -C {{ export_output_dir }}/{{ pvc_name }}
+    oc exec -n openshift-compliance {{ pod_name }} -c extractor {{ oc_context_arg | default('') }} -- tar czf - -C /results . | tar xzf - -C {{ compliance_reports_path }}/{{ pvc_name }}
   args:
     executable: /bin/bash
   ignore_errors: true
@@ -43,7 +43,7 @@
 
 - name: Verificar que la copia fue exitosa
   stat:
-    path: "{{ export_output_dir }}/{{ pvc_name }}"
+    path: "{{ compliance_reports_path }}/{{ pvc_name }}"
   register: copied_dir
 
 - name: Mostrar resultado de la copia
