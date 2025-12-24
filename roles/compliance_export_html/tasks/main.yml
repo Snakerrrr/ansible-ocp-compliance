@@ -398,6 +398,9 @@
       📊 PVCs CIS: {{ cis_pvcs | length }} - {{ cis_pvcs if cis_pvcs | length > 0 else 'Ninguno' }}
       📊 PVCs PCI: {{ pci_pvcs | length }} - {{ pci_pvcs if pci_pvcs | length > 0 else 'Ninguno' }}
       ========================================
+      
+      ⚠️  VERIFICACIÓN: Asegúrate de que estos nombres coincidan con los PVCs que inspeccionaste manualmente.
+      Si no coinciden, verifica que los scans de compliance hayan completado correctamente.
 
 - name: Establecer valores finales para sub-tareas
   set_fact:
@@ -427,6 +430,75 @@
     pvc_type: "pci"
     oc_context_arg: "{{ _final_oc_context_arg }}"
     managed_cluster_kubeconfig_path: "{{ _final_managed_cluster_kubeconfig_path }}"
+
+# --- TAREAS DE PREPARACIÓN DE DATOS (Descomprimir y Aplanar) ---
+
+- name: 🔍 DEBUG - Listar estructura cruda descargada
+  find:
+    paths: "{{ compliance_reports_path }}"
+    recurse: yes
+  register: raw_files_structure
+
+- name: 🔍 DEBUG - Mostrar qué bajó del PVC
+  debug:
+    msg: "Archivos crudos encontrados: {{ raw_files_structure.files | length }} archivos en total"
+  when: raw_files_structure.files | length > 0
+
+- name: 🔍 DEBUG - Mostrar estructura de directorios
+  debug:
+    msg: "Estructura: {{ raw_files_structure.files | map(attribute='path') | list | join(', ') }}"
+  when: raw_files_structure.files | length > 0
+
+- name: Descomprimir archivos .bzip2 (Recursivo en todas las carpetas de PVC)
+  shell: |
+    find "{{ compliance_reports_path }}" -type d -name "ocp4-*" | while read pvc_dir; do
+      if [ -d "$pvc_dir" ]; then
+        echo "Descomprimiendo archivos en: $pvc_dir"
+        find "$pvc_dir" -name "*.bzip2" -exec bunzip2 -f {} \; 2>/dev/null || true
+      fi
+    done
+  args:
+    executable: /bin/bash
+  ignore_errors: true
+  register: decompression_result
+
+- name: 🔍 DEBUG - Resultado de descompresión
+  debug:
+    msg: "Descompresión completada. RC: {{ decompression_result.rc | default('N/A') }}"
+  when: decompression_result is defined
+
+- name: Aplanar estructura de directorios (Mover XMLs de subdirectorios a la raíz de cada PVC)
+  shell: |
+    find "{{ compliance_reports_path }}" -type d -name "ocp4-*" | while read pvc_dir; do
+      if [ -d "$pvc_dir" ]; then
+        echo "Aplanando XMLs en: $pvc_dir"
+        # Buscar XMLs en subdirectorios (mindepth 2) y moverlos a la raíz del PVC
+        find "$pvc_dir" -name "*.xml" -mindepth 2 -type f -exec mv {} "$pvc_dir/" \; 2>/dev/null || true
+      fi
+    done
+  args:
+    executable: /bin/bash
+  ignore_errors: true
+  register: flatten_result
+
+- name: 🔍 DEBUG - Resultado de aplanado
+  debug:
+    msg: "Aplanado completado. RC: {{ flatten_result.rc | default('N/A') }}"
+  when: flatten_result is defined
+
+- name: 🔍 DEBUG - Verificar estructura después de preparación
+  find:
+    paths: "{{ compliance_reports_path }}"
+    patterns: "*.xml"
+    recurse: yes
+  register: xml_files_after_prep
+
+- name: 🔍 DEBUG - XMLs disponibles después de preparación
+  debug:
+    msg: 
+      - "Total de archivos XML encontrados: {{ xml_files_after_prep.files | length }}"
+      - "Archivos XML: {{ xml_files_after_prep.files | map(attribute='path') | list }}"
+  when: xml_files_after_prep.files | length > 0
 
 - name: Renderizar script de conversión XML → HTML
   template:
