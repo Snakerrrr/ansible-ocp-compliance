@@ -33,7 +33,7 @@
     placement_label_key: "{{ placement_label_key | default('compliance') }}"
     placement_label_value: "{{ placement_label_value | default('enabled') }}"
     placement_use_matchlabels: "{{ placement_use_matchlabels | default(true) | bool }}"
-    scan_schedule: "{{ scan_schedule | default('0 2 * * *') }}"
+    scan_schedule: "{{ scan_schedule | default('0 1 * * *') }}"
     scan_setting_name: "{{ scan_setting_name | default('periodic-daily') }}"
     scan_remediation_action: "{{ scan_remediation_action | default('inform') }}"
     install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"

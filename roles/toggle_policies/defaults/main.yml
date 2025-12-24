@@ -1,14 +1,17 @@
 ---
 # Defaults del rol toggle_policies
 
-# Ruta temporal
+# Rutas y Etiquetas
 gitops_repo_path: "/tmp/acm-policies"
-
-# Etiquetas
 placement_label_key: "compliance"
 placement_label_value: "enabled"
 
-# Definición de estado (Booleano puro)
+# Estado de los Escaneos (Defaults de seguridad)
 cis_disabled: false
 pci_disabled: true
+
+# --- CONFIGURACIÓN DE SCHEDULE (El fix que necesitas) ---
+# Antes fallaba por recursión. Ahora ponemos el valor fijo.
+scan_setting_name: "periodic-daily"   # <--- Valor solicitado
+scan_schedule: "0 1 * * *"            # <--- Valor estándar (1 AM)
 

@@ -21,8 +21,8 @@
 - name: Establecer valores por defecto para ScanSetting (sin recursión)
   set_fact:
     _scan_setting_compliance_namespace: openshift-compliance
-    _scan_setting_name: periodic-daily
-    _scan_setting_schedule: "0 2 * * *"
+    _scan_setting_name: "{{ scan_setting_name }}"
+    _scan_setting_schedule: "{{ scan_schedule }}"
 
 - name: Actualizar valores de ScanSetting si están definidos
   set_fact:
