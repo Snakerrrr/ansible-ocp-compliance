@@ -586,7 +586,6 @@
     recurse: yes        # Busca en todas las subcarpetas (3/, 4/, 5/, etc.)
     file_type: file
   register: files_to_zip
-  when: do_send_email | bool
 
 - name: Comprimir reportes HTML y Resumen en un ZIP
   community.general.archive:
@@ -596,13 +595,8 @@
     mode: '0644'
   register: zip_creation
   when: 
-    - do_send_email | bool
     - files_to_zip is defined
     - files_to_zip.files | length > 0
-
-  when: 
-    - do_send_email | bool
-    - zip_creation is defined
 
 # --- ENVÍO DE CORREO OPTIMIZADO ---
 

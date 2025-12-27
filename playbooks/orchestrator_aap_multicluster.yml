@@ -122,6 +122,8 @@
         managed_cluster_name: "{{ item }}"
         # Mapear export_output_dir del playbook a compliance_reports_path del rol
         compliance_reports_path: "{{ export_output_dir | default('/tmp/compliance-reports') }}/{{ item }}"
+        # Deshabilitar envío de correo individual - se enviará al final todos juntos
+        do_send_email: false
       loop: "{{ target_clusters_list }}"
       loop_control:
         loop_var: item
@@ -135,8 +137,79 @@
       ignore_errors: true
 
     # ---------------------------------------------------------
-    # 6. RESUMEN FINAL
+    # 6. ENVÍO CONSOLIDADO DE CORREOS (Todos los clusters juntos)
+    # ---------------------------------------------------------
+    - name: Buscar todos los ZIPs generados por cluster
+      find:
+        paths: "{{ export_output_dir }}"
+        patterns: "*.zip"
+        recurse: yes
+        file_type: file
+      register: all_zip_files
+      when: 
+        - do_send_email | bool
+        - do_export_html | bool
+        - target_clusters_list | length > 0
+
+    - name: Construir lista de clusters procesados exitosamente
+      set_fact:
+        clusters_with_reports: "{{ all_zip_files.files | map('regex_replace', '.*/([^/]+)/.*\\.zip$', '\\1') | list | unique }}"
+      when: 
+        - do_send_email | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+
+    - name: Enviar correo consolidado con todos los reportes
+      community.general.mail:
+        host: "{{ email_smtp_host }}"
+        port: "{{ email_smtp_port }}"
+        username: "{{ email_smtp_username }}"
+        password: "{{ email_smtp_password }}"
+        from: "{{ email_from }}"
+        to: "{{ email_to }}"
+        subject: "{{ email_subject_prefix }} - Reportes Multi-Cluster ({{ clusters_with_reports | default([]) | length }} clusters)"
+        body: |
+          Hola,
+          
+          Se adjuntan los reportes de cumplimiento consolidados de todos los clusters procesados.
+          
+          📦 Contenido del correo:
+          {% if clusters_with_reports is defined and clusters_with_reports | length > 0 %}
+          - Total de clusters procesados: {{ clusters_with_reports | length }}
+          - Clusters: {{ clusters_with_reports | join(', ') }}
+          {% for cluster in clusters_with_reports %}
+          - Cluster {{ cluster }}: {{ all_zip_files.files | selectattr('path', 'match', '.*/' + cluster + '/.*\\.zip$') | list | length }} archivo(s) ZIP
+          {% endfor %}
+          {% else %}
+          - No se encontraron reportes generados.
+          {% endif %}
+          
+          Cada ZIP contiene:
+          - Reportes detallados en formato HTML
+          - Resumen de ejecución (summary.txt)
+          
+          Nota: Los archivos XML crudos permanecen en el servidor para auditoría si fueran necesarios.
+          
+          Saludos,
+          Equipo de Automatización.
+        attach: "{{ all_zip_files.files | map(attribute='path') | list }}"
+        secure: starttls
+      delegate_to: localhost
+      when: 
+        - do_send_email | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+      ignore_errors: true
+
+    # ---------------------------------------------------------
+    # 7. RESUMEN FINAL
     # ---------------------------------------------------------
     - name: Resumen de ubicación de reportes
       debug:
-        msg: "✅ Los reportes se han guardado en: {{ export_output_dir }}/<nombre-cluster>/"
+        msg: |
+          ✅ Los reportes se han guardado en: {{ export_output_dir }}/<nombre-cluster>/
+          {% if do_send_email | bool and all_zip_files is defined and all_zip_files.files | length > 0 %}
+          📧 Correo consolidado enviado con {{ all_zip_files.files | length }} archivo(s) de {{ clusters_with_reports | default([]) | length }} cluster(s)
+          {% elif do_send_email | bool %}
+          ⚠️  No se encontraron reportes para enviar por correo
+          {% endif %}
