@@ -113,23 +113,6 @@
     # ---------------------------------------------------------
     # 5. FASE EXTRACCIÓN (Bucle por cada Cluster)
     # ---------------------------------------------------------
-    - name: "🔍 DEBUG - Pre-extracción para {{ item }}"
-      debug:
-        msg:
-          - "=========================================="
-          - "INICIANDO EXTRACCIÓN PARA CLUSTER: {{ item }}"
-          - "=========================================="
-          - "Cluster actual: {{ item }}"
-          - "Lista completa: {{ target_clusters_list }}"
-          - "Ruta de reportes: {{ export_output_dir | default('/tmp/compliance-reports') }}/{{ item }}"
-      loop: "{{ target_clusters_list }}"
-      loop_control:
-        loop_var: item
-        label: "DEBUG Cluster: {{ item }}"
-      when: 
-        - do_export_html | bool
-        - target_clusters_list | length > 0
-
     - name: "Procesando extracción para {{ item }}"
       include_role:
         name: compliance_export_html

@@ -93,19 +93,13 @@
     found_import_secret: "{{ hub_import_secret.resources | default([]) | length > 0 }}"
   when: target_cluster_context != ''
 
-- name: DEBUG - Verificando secretos encontrados
-  debug:
-    msg: 
-      - "Cluster: {{ managed_cluster_name }}"
-      - "¿Existe admin-kubeconfig?: {{ found_admin_secret | default(false) }}"
-      - "¿Existe import secret?: {{ found_import_secret | default(false) }}"
-  when: target_cluster_context != ''
-
 - name: Extraer kubeconfig desde admin-kubeconfig (Prioridad 1)
   set_fact:
     kubeconfig_from_admin:
       stdout: "{{ hub_admin_secret.resources[0].data.kubeconfig | b64decode }}"
       rc: 0
+      secret_namespace: "{{ hub_admin_secret.resources[0].metadata.namespace }}"
+      secret_name: "{{ hub_admin_secret.resources[0].metadata.name }}"
   when:
     - target_cluster_context != ''
     - found_admin_secret | default(false) | bool
@@ -261,47 +255,6 @@
     kubeconfig_source: "{{ secret_source if (target_cluster_context != '' and secret_source != 'none') else ('file' if (target_cluster_context != '' and _managed_cluster_kubeconfigs is defined and managed_cluster_name in _managed_cluster_kubeconfigs) else ('default_file' if target_cluster_context != '' else 'none')) }}"
   when: target_cluster_context != ''
 
-- name: 🔍 DEBUG - Verificar kubeconfig guardado para este cluster
-  stat:
-    path: "/tmp/kubeconfig-{{ managed_cluster_name }}"
-  register: kubeconfig_file_stat
-  when: target_cluster_context != ''
-
-- name: 🔍 DEBUG - Mostrar información del kubeconfig
-  debug:
-    msg:
-      - "=========================================="
-      - "INFORMACIÓN DEL KUBECONFIG"
-      - "=========================================="
-      - "managed_cluster_name: {{ managed_cluster_name }}"
-      - "Ruta esperada: /tmp/kubeconfig-{{ managed_cluster_name }}"
-      - "¿Existe el archivo?: {{ kubeconfig_file_stat.stat.exists | default(false) }}"
-      - "Tamaño del archivo: {{ kubeconfig_file_stat.stat.size | default(0) }} bytes"
-      - "secret_source: {{ secret_source | default('NO_DEFINIDO') }}"
-      - "managed_cluster_kubeconfig_path: {{ managed_cluster_kubeconfig_path | default('NO_DEFINIDO') }}"
-      - "=========================================="
-  when: 
-    - target_cluster_context != ''
-    - kubeconfig_file_stat is defined
-
-- name: 🔍 DEBUG - Verificar contenido del kubeconfig (primeras líneas)
-  command: head -n 5 "/tmp/kubeconfig-{{ managed_cluster_name }}"
-  register: kubeconfig_preview
-  changed_when: false
-  failed_when: false
-  when: 
-    - target_cluster_context != ''
-    - kubeconfig_file_stat.stat.exists | default(false) | bool
-
-- name: 🔍 DEBUG - Mostrar preview del kubeconfig
-  debug:
-    msg:
-      - "Primeras líneas del kubeconfig:"
-      - "{{ kubeconfig_preview.stdout_lines if kubeconfig_preview.stdout_lines is defined else ['No se pudo leer'] }}"
-  when: 
-    - target_cluster_context != ''
-    - kubeconfig_preview is defined
-
 - name: Verificar si existe kubeconfig en archivo (fallback)
   stat:
     path: "{{ managed_cluster_kubeconfig_path }}"
@@ -432,20 +385,6 @@
     mode: '0755'
     recurse: yes
 
-- name: 🔍 DEBUG - Contexto antes de buscar PVCs
-  debug:
-    msg:
-      - "=========================================="
-      - "CONTEXTO ANTES DE BUSCAR PVCs"
-      - "=========================================="
-      - "target_cluster_context: {{ target_cluster_context | default('NO_DEFINIDO') }}"
-      - "managed_cluster_name: {{ managed_cluster_name | default('NO_DEFINIDO') }}"
-      - "managed_cluster_kubeconfig_path: {{ managed_cluster_kubeconfig_path | default('NO_DEFINIDO') }}"
-      - "kubeconfig_source: {{ kubeconfig_source | default('NO_DEFINIDO') }}"
-      - "oc_context_arg: {{ oc_context_arg | default('VACIO') }}"
-      - "=========================================="
-  when: target_cluster_context != ''
-
 - name: Buscar PVCs de compliance
   command: oc get pvc -n openshift-compliance {{ oc_context_arg | default('') }} --no-headers -o custom-columns=NAME:.metadata.name
   register: pvc_list
@@ -469,38 +408,6 @@
       
       ⚠️  VERIFICACIÓN: Asegúrate de que estos nombres coincidan con los PVCs que inspeccionaste manualmente.
       Si no coinciden, verifica que los scans de compliance hayan completado correctamente.
-
-- name: 🔍 DEBUG - Verificar valores finales antes de procesar PVCs
-  debug:
-    msg:
-      - "=========================================="
-      - "VALORES FINALES PARA PROCESAR PVCs"
-      - "=========================================="
-      - "target_cluster_context: {{ target_cluster_context | default('NO_DEFINIDO') }}"
-      - "managed_cluster_name: {{ managed_cluster_name | default('NO_DEFINIDO') }}"
-      - "managed_cluster_kubeconfig_path: {{ managed_cluster_kubeconfig_path | default('NO_DEFINIDO') }}"
-      - "kubeconfig_source: {{ kubeconfig_source | default('NO_DEFINIDO') }}"
-      - "Ruta completa esperada: /tmp/kubeconfig-{{ managed_cluster_name }}"
-      - "=========================================="
-
-- name: 🔍 DEBUG - Verificar que el kubeconfig es único para este cluster
-  command: "grep -m 1 'server:' /tmp/kubeconfig-{{ managed_cluster_name }} || echo 'NO_ENCONTRADO'"
-  register: kubeconfig_server_check
-  changed_when: false
-  failed_when: false
-  when: 
-    - target_cluster_context != ''
-    - managed_cluster_name is defined
-    - managed_cluster_name != ''
-
-- name: 🔍 DEBUG - Mostrar servidor del kubeconfig
-  debug:
-    msg:
-      - "Servidor del kubeconfig para {{ managed_cluster_name }}:"
-      - "{{ kubeconfig_server_check.stdout if kubeconfig_server_check.stdout is defined else 'NO_SE_PUDO_LEER' }}"
-  when: 
-    - target_cluster_context != ''
-    - kubeconfig_server_check is defined
 
 - name: Establecer valores finales para sub-tareas
   set_fact:
@@ -535,22 +442,6 @@
 
 # --- TAREAS DE PREPARACIÓN DE DATOS (Descomprimir y Aplanar) ---
 
-- name: 🔍 DEBUG - Listar estructura cruda descargada
-  find:
-    paths: "{{ compliance_reports_path }}"
-    recurse: yes
-  register: raw_files_structure
-
-- name: 🔍 DEBUG - Mostrar qué bajó del PVC
-  debug:
-    msg: "Archivos crudos encontrados: {{ raw_files_structure.files | length }} archivos en total"
-  when: raw_files_structure.files | length > 0
-
-- name: 🔍 DEBUG - Mostrar estructura de directorios
-  debug:
-    msg: "Estructura: {{ raw_files_structure.files | map(attribute='path') | list | join(', ') }}"
-  when: raw_files_structure.files | length > 0
-
 - name: Descomprimir archivos .bzip2 (Recursivo en todas las carpetas de PVC)
   shell: |
     find "{{ compliance_reports_path }}" -type d -name "ocp4-*" | while read pvc_dir; do
@@ -563,11 +454,6 @@
     executable: /bin/bash
   ignore_errors: true
   register: decompression_result
-
-- name: 🔍 DEBUG - Resultado de descompresión
-  debug:
-    msg: "Descompresión completada. RC: {{ decompression_result.rc | default('N/A') }}"
-  when: decompression_result is defined
 
 - name: Aplanar estructura de directorios (Mover XMLs de subdirectorios a la raíz de cada PVC)
   shell: |
@@ -582,25 +468,6 @@
     executable: /bin/bash
   ignore_errors: true
   register: flatten_result
-
-- name: 🔍 DEBUG - Resultado de aplanado
-  debug:
-    msg: "Aplanado completado. RC: {{ flatten_result.rc | default('N/A') }}"
-  when: flatten_result is defined
-
-- name: 🔍 DEBUG - Verificar estructura después de preparación
-  find:
-    paths: "{{ compliance_reports_path }}"
-    patterns: "*.xml"
-    recurse: yes
-  register: xml_files_after_prep
-
-- name: 🔍 DEBUG - XMLs disponibles después de preparación
-  debug:
-    msg: 
-      - "Total de archivos XML encontrados: {{ xml_files_after_prep.files | length }}"
-      - "Archivos XML: {{ xml_files_after_prep.files | map(attribute='path') | list }}"
-  when: xml_files_after_prep.files | length > 0
 
 - name: Renderizar script de conversión XML → HTML
   template:
@@ -721,16 +588,6 @@
   register: files_to_zip
   when: do_send_email | bool
 
-- name: 🔍 DEBUG - Archivos encontrados para comprimir
-  debug:
-    msg: 
-      - "Total de archivos para comprimir: {{ files_to_zip.files | length }}"
-      - "Archivos HTML: {{ files_to_zip.files | selectattr('path', 'match', '.*\\.html$') | list | length }}"
-      - "Archivos summary: {{ files_to_zip.files | selectattr('path', 'match', '.*summary\\.txt$') | list | length }}"
-  when: 
-    - do_send_email | bool
-    - files_to_zip is defined
-
 - name: Comprimir reportes HTML y Resumen en un ZIP
   community.general.archive:
     path: "{{ files_to_zip.files | map(attribute='path') | list }}"
@@ -743,12 +600,6 @@
     - files_to_zip is defined
     - files_to_zip.files | length > 0
 
-- name: 🔍 DEBUG - Verificar archivo ZIP creado
-  debug:
-    msg: 
-      - "Archivo ZIP creado: {{ zip_creation.dest }}"
-      - "Estado: {{ zip_creation.state }}"
-      - "Tamaño: {{ zip_creation.size | default('N/A') }} bytes"
   when: 
     - do_send_email | bool
     - zip_creation is defined
