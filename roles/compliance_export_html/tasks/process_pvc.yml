@@ -16,10 +16,22 @@
     pvc_name: "{{ pvc_name }}"
     pod_name: "{{ pod_name }}"
 
+- name: 🔍 DEBUG - Verificar kubeconfig antes de aplicar pod
+  debug:
+    msg:
+      - "=========================================="
+      - "APLICANDO POD EXTRACTOR"
+      - "=========================================="
+      - "PVC: {{ pvc_name }}"
+      - "managed_cluster_kubeconfig_path: {{ managed_cluster_kubeconfig_path | default('NO_DEFINIDO') }}"
+      - "KUBECONFIG que se usará: {{ managed_cluster_kubeconfig_path if (managed_cluster_kubeconfig_path | default('') != '') else 'Contexto actual (HUB)' }}"
+      - "=========================================="
+  when: managed_cluster_kubeconfig_path is defined
+
 - name: Aplicar pod extractor
   command: oc apply -f /tmp/extract-{{ pvc_name }}.yaml -n openshift-compliance {{ oc_context_arg | default('') }}
   register: pod_apply
-  environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
+  environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path is defined and managed_cluster_kubeconfig_path | default('') != '') else {} }}"
 
 - name: Esperar a que el pod esté Running
   command: oc wait --for=condition=Ready pod/{{ pod_name }} -n openshift-compliance {{ oc_context_arg | default('') }} --timeout=60s

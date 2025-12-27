@@ -261,6 +261,47 @@
     kubeconfig_source: "{{ secret_source if (target_cluster_context != '' and secret_source != 'none') else ('file' if (target_cluster_context != '' and _managed_cluster_kubeconfigs is defined and managed_cluster_name in _managed_cluster_kubeconfigs) else ('default_file' if target_cluster_context != '' else 'none')) }}"
   when: target_cluster_context != ''
 
+- name: 🔍 DEBUG - Verificar kubeconfig guardado para este cluster
+  stat:
+    path: "/tmp/kubeconfig-{{ managed_cluster_name }}"
+  register: kubeconfig_file_stat
+  when: target_cluster_context != ''
+
+- name: 🔍 DEBUG - Mostrar información del kubeconfig
+  debug:
+    msg:
+      - "=========================================="
+      - "INFORMACIÓN DEL KUBECONFIG"
+      - "=========================================="
+      - "managed_cluster_name: {{ managed_cluster_name }}"
+      - "Ruta esperada: /tmp/kubeconfig-{{ managed_cluster_name }}"
+      - "¿Existe el archivo?: {{ kubeconfig_file_stat.stat.exists | default(false) }}"
+      - "Tamaño del archivo: {{ kubeconfig_file_stat.stat.size | default(0) }} bytes"
+      - "secret_source: {{ secret_source | default('NO_DEFINIDO') }}"
+      - "managed_cluster_kubeconfig_path: {{ managed_cluster_kubeconfig_path | default('NO_DEFINIDO') }}"
+      - "=========================================="
+  when: 
+    - target_cluster_context != ''
+    - kubeconfig_file_stat is defined
+
+- name: 🔍 DEBUG - Verificar contenido del kubeconfig (primeras líneas)
+  command: head -n 5 "/tmp/kubeconfig-{{ managed_cluster_name }}"
+  register: kubeconfig_preview
+  changed_when: false
+  failed_when: false
+  when: 
+    - target_cluster_context != ''
+    - kubeconfig_file_stat.stat.exists | default(false) | bool
+
+- name: 🔍 DEBUG - Mostrar preview del kubeconfig
+  debug:
+    msg:
+      - "Primeras líneas del kubeconfig:"
+      - "{{ kubeconfig_preview.stdout_lines if kubeconfig_preview.stdout_lines is defined else ['No se pudo leer'] }}"
+  when: 
+    - target_cluster_context != ''
+    - kubeconfig_preview is defined
+
 - name: Verificar si existe kubeconfig en archivo (fallback)
   stat:
     path: "{{ managed_cluster_kubeconfig_path }}"
@@ -429,9 +470,41 @@
       ⚠️  VERIFICACIÓN: Asegúrate de que estos nombres coincidan con los PVCs que inspeccionaste manualmente.
       Si no coinciden, verifica que los scans de compliance hayan completado correctamente.
 
+- name: 🔍 DEBUG - Verificar valores finales antes de procesar PVCs
+  debug:
+    msg:
+      - "=========================================="
+      - "VALORES FINALES PARA PROCESAR PVCs"
+      - "=========================================="
+      - "target_cluster_context: {{ target_cluster_context | default('NO_DEFINIDO') }}"
+      - "managed_cluster_name: {{ managed_cluster_name | default('NO_DEFINIDO') }}"
+      - "managed_cluster_kubeconfig_path: {{ managed_cluster_kubeconfig_path | default('NO_DEFINIDO') }}"
+      - "kubeconfig_source: {{ kubeconfig_source | default('NO_DEFINIDO') }}"
+      - "Ruta completa esperada: /tmp/kubeconfig-{{ managed_cluster_name }}"
+      - "=========================================="
+
+- name: 🔍 DEBUG - Verificar que el kubeconfig es único para este cluster
+  command: "grep -m 1 'server:' /tmp/kubeconfig-{{ managed_cluster_name }} || echo 'NO_ENCONTRADO'"
+  register: kubeconfig_server_check
+  changed_when: false
+  failed_when: false
+  when: 
+    - target_cluster_context != ''
+    - managed_cluster_name is defined
+    - managed_cluster_name != ''
+
+- name: 🔍 DEBUG - Mostrar servidor del kubeconfig
+  debug:
+    msg:
+      - "Servidor del kubeconfig para {{ managed_cluster_name }}:"
+      - "{{ kubeconfig_server_check.stdout if kubeconfig_server_check.stdout is defined else 'NO_SE_PUDO_LEER' }}"
+  when: 
+    - target_cluster_context != ''
+    - kubeconfig_server_check is defined
+
 - name: Establecer valores finales para sub-tareas
   set_fact:
-    _final_managed_cluster_kubeconfig_path: "{{ managed_cluster_kubeconfig_path if (target_cluster_context != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else '' }}"
+    _final_managed_cluster_kubeconfig_path: "{{ managed_cluster_kubeconfig_path if (target_cluster_context != '' and managed_cluster_kubeconfig_path is defined and managed_cluster_kubeconfig_path != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else '' }}"
     _final_oc_context_arg: "{{ oc_context_arg | default('') }}"
 
 - name: Procesar cada PVC CIS
