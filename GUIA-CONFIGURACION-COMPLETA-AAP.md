@@ -784,3 +784,7 @@ Para más detalles sobre configuraciones específicas, consulta:
 
 **¡Listo!** Con esta configuración, deberías poder ejecutar el playbook de compliance multi-cluster desde AAP. Si encuentras algún problema, revisa la sección de Troubleshooting o los logs del job.
 
+
+
+
+

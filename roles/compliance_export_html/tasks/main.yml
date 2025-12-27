@@ -37,10 +37,23 @@
       - O configurar el kubeconfig en el proyecto de AAP
   when: oc_version.rc != 0 or (kubeconfig_check.stdout is defined and 'NO_KUBECONFIG' in kubeconfig_check.stdout)
 
+- name: 🔍 DEBUG - Verificar contexto recibido
+  debug:
+    msg:
+      - "=========================================="
+      - "CONTEXTO RECIBIDO EN EL ROL"
+      - "=========================================="
+      - "target_cluster_context (raw): {{ target_cluster_context | default('NO_DEFINIDO') }}"
+      - "managed_cluster_name (raw): {{ managed_cluster_name | default('NO_DEFINIDO') }}"
+      - "inventory_hostname: {{ inventory_hostname }}"
+      - "=========================================="
+
 - name: Establecer variables iniciales básicas
   set_fact:
-    target_cluster_context: "{{ target_cluster_context | default('') }}"
-    managed_cluster_name: "{{ target_cluster_context }}"
+    # CRÍTICO: No usar default('') aquí - si viene del orchestrator, debe tener valor
+    # Si no viene definido, entonces sí usar default
+    target_cluster_context: "{{ target_cluster_context if target_cluster_context is defined else '' }}"
+    managed_cluster_name: "{{ managed_cluster_name if managed_cluster_name is defined else (target_cluster_context if target_cluster_context is defined else '') }}"
 
 - name: Establecer kubeconfig_secret_namespace (valor por defecto basado en managed_cluster_name)
   set_fact:
@@ -378,11 +391,25 @@
     mode: '0755'
     recurse: yes
 
+- name: 🔍 DEBUG - Contexto antes de buscar PVCs
+  debug:
+    msg:
+      - "=========================================="
+      - "CONTEXTO ANTES DE BUSCAR PVCs"
+      - "=========================================="
+      - "target_cluster_context: {{ target_cluster_context | default('NO_DEFINIDO') }}"
+      - "managed_cluster_name: {{ managed_cluster_name | default('NO_DEFINIDO') }}"
+      - "managed_cluster_kubeconfig_path: {{ managed_cluster_kubeconfig_path | default('NO_DEFINIDO') }}"
+      - "kubeconfig_source: {{ kubeconfig_source | default('NO_DEFINIDO') }}"
+      - "oc_context_arg: {{ oc_context_arg | default('VACIO') }}"
+      - "=========================================="
+  when: target_cluster_context != ''
+
 - name: Buscar PVCs de compliance
   command: oc get pvc -n openshift-compliance {{ oc_context_arg | default('') }} --no-headers -o custom-columns=NAME:.metadata.name
   register: pvc_list
   changed_when: false
-  environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (target_cluster_context != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else {} }}"
+  environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (target_cluster_context != '' and managed_cluster_kubeconfig_path is defined and managed_cluster_kubeconfig_path != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else {} }}"
 
 - name: Filtrar PVCs CIS y PCI
   set_fact:
