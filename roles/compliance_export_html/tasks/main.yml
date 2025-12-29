@@ -628,7 +628,7 @@
     secure: starttls
   delegate_to: localhost
   when: 
-    - do_send_email | bool
+    - (do_send_email | default(false) | bool) and (send_email_from_role | default(true) | bool)
     - zip_creation is defined
     - zip_creation.state == 'file'
   ignore_errors: true # Para ver el error SMTP si falla la contraseña

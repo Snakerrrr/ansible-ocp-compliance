@@ -122,8 +122,9 @@
         managed_cluster_name: "{{ item }}"
         # Mapear export_output_dir del playbook a compliance_reports_path del rol
         compliance_reports_path: "{{ export_output_dir | default('/tmp/compliance-reports') }}/{{ item }}"
-        # Deshabilitar envío de correo individual - se enviará al final todos juntos
-        do_send_email: false
+        # CRÍTICO: Deshabilitar envío de correo individual - se enviará al final todos juntos
+        # Usamos una variable diferente para evitar conflictos de precedencia
+        send_email_from_role: false
       loop: "{{ target_clusters_list }}"
       loop_control:
         loop_var: item
@@ -159,14 +160,18 @@
         - all_zip_files is defined
         - all_zip_files.files | length > 0
 
+    - name: Normalizar email_to a lista (soporta múltiples destinatarios)
+      set_fact:
+        email_to_list: "{{ email_to.split(',') if email_to is string else (email_to if email_to is iterable and email_to is not string else [email_to]) }}"
+
     - name: Enviar correo consolidado con todos los reportes
       community.general.mail:
         host: "{{ email_smtp_host }}"
-        port: "{{ email_smtp_port }}"
+        port: "{{ email_smtp_port | default(587) }}"
         username: "{{ email_smtp_username }}"
         password: "{{ email_smtp_password }}"
         from: "{{ email_from }}"
-        to: "{{ email_to }}"
+        to: "{{ email_to_list }}"
         subject: "{{ email_subject_prefix }} - Reportes Multi-Cluster ({{ clusters_with_reports | default([]) | length }} clusters)"
         body: |
           Hola,
