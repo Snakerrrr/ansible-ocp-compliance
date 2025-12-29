@@ -178,22 +178,36 @@
           
           Se adjuntan los reportes de cumplimiento consolidados de todos los clusters procesados.
           
-          📦 Contenido del correo:
+          📊 RESUMEN DE PROCESAMIENTO
+          ==========================
+          Total de clusters procesados: {{ clusters_with_reports | default([]) | length }}
+          Clusters: {{ clusters_with_reports | default([]) | join(', ') }}
+          
+          📦 DETALLE DE ARCHIVOS ADJUNTOS
+          ===============================
           {% if clusters_with_reports is defined and clusters_with_reports | length > 0 %}
-          - Total de clusters procesados: {{ clusters_with_reports | length }}
-          - Clusters: {{ clusters_with_reports | join(', ') }}
           {% for cluster in clusters_with_reports %}
-          - Cluster {{ cluster }}: {{ all_zip_files.files | selectattr('path', 'match', '.*/' + cluster + '/.*\\.zip$') | list | length }} archivo(s) ZIP
+          {% set cluster_zips = all_zip_files.files | selectattr('path', 'match', '.*/' + cluster + '/.*\\.zip$') | list %}
+          {% for zip_file in cluster_zips %}
+          • Cluster: {{ cluster }}
+            - Archivo: {{ zip_file.path.split('/')[-1] }}
+            - Tamaño: {{ ((zip_file.size | default(0)) / 1024 / 1024) | round(2) }} MB
+          
+          {% endfor %}
           {% endfor %}
           {% else %}
-          - No se encontraron reportes generados.
+          ⚠️  No se encontraron reportes generados.
           {% endif %}
           
-          Cada ZIP contiene:
-          - Reportes detallados en formato HTML
-          - Resumen de ejecución (summary.txt)
+          📄 CONTENIDO DE CADA ZIP
+          =======================
+          Cada archivo ZIP contiene:
+          • Reportes detallados en formato HTML
+          • Resumen de ejecución (summary.txt)
           
-          Nota: Los archivos XML crudos permanecen en el servidor para auditoría si fueran necesarios.
+          ℹ️  NOTA IMPORTANTE
+          ==================
+          Los archivos XML crudos permanecen en el servidor para auditoría si fueran necesarios.
           
           Saludos,
           Equipo de Automatización.
