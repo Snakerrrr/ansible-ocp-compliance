@@ -81,7 +81,7 @@ if [ "$BZIP2_COUNT" -gt 0 ]; then
                 # Si el archivo descomprimido tiene extensión .bzip2 (sin comprimir), renombrarlo
                 decompressed_file="${bzip_file%.bzip2}"
                 if [ -f "$decompressed_file" ] && [ "$decompressed_file" != "$xml_file" ] && [[ "$decompressed_file" == *.bzip2 ]]; then
-                    mv "$decompressed_file" "$xml_file" 2>/dev/null && echo "    ✅ Descomprimido y renombrado"
+                    mv "$decompressed_file" "$xml_file" 2>/dev/null && echo "  Descomprimido y renombrado"
                 else
                     echo " Descomprimido"
                 fi
@@ -187,5 +187,6 @@ HTML_COUNT=$(find "$OUTPUT_DIR" -name "*.html" -type f 2>/dev/null | wc -l)
 echo "Resumen:"
 echo "  - Archivos XML procesados: $XML_COUNT"
 echo "  - Archivos HTML generados: $HTML_COUNT"
+
 
 
