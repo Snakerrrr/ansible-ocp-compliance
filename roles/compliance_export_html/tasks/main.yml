@@ -25,7 +25,7 @@
 - name: Advertir si oc no está disponible o no tiene kubeconfig
   debug:
     msg: |
-      ⚠️  ADVERTENCIA: El comando 'oc' no está disponible o no tiene kubeconfig configurado.
+      ADVERTENCIA: El comando 'oc' no está disponible o no tiene kubeconfig configurado.
       
       El playbook intentará usar métodos alternativos para obtener el kubeconfig:
       1. Secrets de ACM usando módulos de Ansible (si están disponibles)
@@ -37,7 +37,7 @@
       - O configurar el kubeconfig en el proyecto de AAP
   when: oc_version.rc != 0 or (kubeconfig_check.stdout is defined and 'NO_KUBECONFIG' in kubeconfig_check.stdout)
 
-- name: 🔍 DEBUG - Verificar contexto recibido
+- name: DEBUG - Verificar contexto recibido
   debug:
     msg:
       - "=========================================="
@@ -145,7 +145,7 @@
 - name: Advertir si no se encontraron secrets de kubeconfig
   debug:
     msg: |
-      ⚠️  No se encontraron secrets de kubeconfig en el namespace '{{ managed_cluster_name }}'.
+      No se encontraron secrets de kubeconfig en el namespace '{{ managed_cluster_name }}'.
       
       Secrets buscados:
       1. admin-kubeconfig (prioridad alta)
@@ -279,7 +279,7 @@
 - name: Advertir si el kubeconfig está expirado
   debug:
     msg: |
-      ⚠️  El kubeconfig para '{{ target_cluster_context }}' está expirado o inválido.
+      El kubeconfig para '{{ target_cluster_context }}' está expirado o inválido.
       
       {% if kubeconfig_source == 'acm_native' %}
       El kubeconfig viene de un secret nativo de ACM (admin-kubeconfig o {{ managed_cluster_name }}-import).
@@ -304,7 +304,7 @@
 - name: Fallar si no se puede acceder al managed cluster
   fail:
     msg: |
-      ❌ No se encontró kubeconfig para el managed cluster '{{ target_cluster_context }}'.
+      No se encontró kubeconfig para el managed cluster '{{ target_cluster_context }}'.
       
       El playbook buscó en:
       1. Secrets nativos de ACM en namespace '{{ managed_cluster_name }}':
@@ -333,14 +333,14 @@
       ========================================
       Método de Acceso al Cluster
       ========================================
-      🌍 Cluster/Ambiente: {{ managed_cluster_name if target_cluster_context != '' else 'HUB (contexto actual)' }}
-      📍 Fuente: {{ kubeconfig_source if target_cluster_context != '' else 'Contexto actual (HUB)' }}
-      🔑 Kubeconfig: {{ managed_cluster_kubeconfig_path if (target_cluster_context != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else 'Contexto actual (HUB)' }}
+      Cluster/Ambiente: {{ managed_cluster_name if target_cluster_context != '' else 'HUB (contexto actual)' }}
+      Fuente: {{ kubeconfig_source if target_cluster_context != '' else 'Contexto actual (HUB)' }}
+      Kubeconfig: {{ managed_cluster_kubeconfig_path if (target_cluster_context != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else 'Contexto actual (HUB)' }}
       {% if kubeconfig_source == 'acm_native' %}
-      📦 Secret nativo de ACM en namespace: {{ managed_cluster_name }}
-      🔍 Secrets buscados: admin-kubeconfig, {{ managed_cluster_name }}-import
+      Secret nativo de ACM en namespace: {{ managed_cluster_name }}
+      Secrets buscados: admin-kubeconfig, {{ managed_cluster_name }}-import
       {% elif kubeconfig_source == 'custom' %}
-      📦 Secret personalizado: managed-cluster-kubeconfig-{{ managed_cluster_name }} en namespace {{ kubeconfig_secret_namespace }}
+      Secret personalizado: managed-cluster-kubeconfig-{{ managed_cluster_name }} en namespace {{ kubeconfig_secret_namespace }}
       {% endif %}
       ========================================
   when: target_cluster_context != ''
@@ -402,11 +402,11 @@
       ========================================
       PVCs Encontrados en {{ managed_cluster_name if target_cluster_context != '' else 'HUB' }}
       ========================================
-      📊 PVCs CIS: {{ cis_pvcs | length }} - {{ cis_pvcs if cis_pvcs | length > 0 else 'Ninguno' }}
-      📊 PVCs PCI: {{ pci_pvcs | length }} - {{ pci_pvcs if pci_pvcs | length > 0 else 'Ninguno' }}
+      PVCs CIS: {{ cis_pvcs | length }} - {{ cis_pvcs if cis_pvcs | length > 0 else 'Ninguno' }}
+      PVCs PCI: {{ pci_pvcs | length }} - {{ pci_pvcs if pci_pvcs | length > 0 else 'Ninguno' }}
       ========================================
       
-      ⚠️  VERIFICACIÓN: Asegúrate de que estos nombres coincidan con los PVCs que inspeccionaste manualmente.
+      VERIFICACIÓN: Asegúrate de que estos nombres coincidan con los PVCs que inspeccionaste manualmente.
       Si no coinciden, verifica que los scans de compliance hayan completado correctamente.
 
 - name: Establecer valores finales para sub-tareas
@@ -490,72 +490,6 @@
     recurse: true
   register: html_files
 
-# ❌ COMENTADO: Limpieza de archivos deshabilitada para permitir adjuntar archivos por correo
-# Los archivos se mantienen para que puedan ser adjuntados en el correo electrónico
-# - name: Limpiar archivos intermedios
-#   block:
-#     - name: Eliminar archivos .bzip2
-#       find:
-#         paths: "{{ compliance_reports_path }}"
-#         patterns: "*.bzip2"
-#         recurse: true
-#       register: bzip2_files
-#
-#     - name: Eliminar archivos .bzip2 encontrados
-#       file:
-#         path: "{{ item.path }}"
-#         state: absent
-#       loop: "{{ bzip2_files.files }}"
-#       when: bzip2_files.files | length > 0
-#
-#     - name: Eliminar archivos .bzip2.out
-#       find:
-#         paths: "{{ compliance_reports_path }}"
-#         patterns: "*.bzip2.out"
-#         recurse: true
-#       register: bzip2_out_files
-#
-#     - name: Eliminar archivos .bzip2.out encontrados
-#       file:
-#         path: "{{ item.path }}"
-#         state: absent
-#       loop: "{{ bzip2_out_files.files }}"
-#       when: bzip2_out_files.files | length > 0
-#
-#     - name: Eliminar archivos .xml
-#       find:
-#         paths: "{{ compliance_reports_path }}"
-#         patterns: "*.xml"
-#         recurse: true
-#       register: xml_files
-#
-#     - name: Eliminar archivos XML encontrados
-#       file:
-#         path: "{{ item.path }}"
-#         state: absent
-#       loop: "{{ xml_files.files }}"
-#       when: xml_files.files | length > 0
-#
-#     - name: Eliminar script temporal
-#       file:
-#         path: "{{ compliance_reports_path }}/render_reports.sh"
-#         state: absent
-#
-#     - name: Eliminar directorios lost+found
-#       find:
-#         paths: "{{ compliance_reports_path }}"
-#         patterns: "lost+found"
-#         file_type: directory
-#         recurse: true
-#       register: lost_found_dirs
-#
-#     - name: Eliminar directorios lost+found encontrados
-#       file:
-#         path: "{{ item.path }}"
-#         state: absent
-#       loop: "{{ lost_found_dirs.files }}"
-#       ignore_errors: true
-
 - name: Generar summary.txt
   template:
     src: summary.txt.j2
@@ -567,7 +501,7 @@
     compliance_reports_path: "{{ compliance_reports_path }}"
 
 # --- VERIFICACIÓN DE DEBUG (Para saber por qué no llega el correo) ---
-- name: 🐛 DEBUG - Estado previo al correo
+- name: DEBUG - Estado previo al correo
   debug:
     msg:
       - "Variable do_send_email: {{ do_send_email }}"
@@ -614,7 +548,7 @@
       
       Se adjunta el reporte de cumplimiento consolidado.
       
-      📦 Contenido del ZIP:
+      Contenido del ZIP:
       - Reportes detallados en formato HTML ({{ files_to_zip.files | selectattr('path', 'match', '.*\\.html$') | list | length }} archivos).
       - Resumen de ejecución (summary.txt).
       
