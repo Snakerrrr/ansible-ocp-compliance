@@ -65,11 +65,11 @@
 - name: Mostrar resultado de la copia
   debug:
     msg: |
-      {{ '✅ Copiado exitosamente' if (copied_dir.stat.exists and copied_dir.stat.isdir) else '❌ Error al copiar - directorio no encontrado' }}
+      {{ 'Copiado exitosamente' if (copied_dir.stat.exists and copied_dir.stat.isdir) else 'Error al copiar - directorio no encontrado' }}
       
       Método usado:
-      - oc cp: {{ '✅ Exitoso' if (copy_result_oc_cp.rc | default(999) == 0) else '❌ Falló' if copy_result_oc_cp is defined else '⏭️  No intentado' }}
-      - tar pipe: {{ '✅ Exitoso' if (copy_result_tar.rc | default(999) == 0) else '❌ Falló' if copy_result_tar is defined else '⏭️  No intentado' }}
+      - oc cp: {{ 'Exitoso' if (copy_result_oc_cp.rc | default(999) == 0) else 'Falló' if copy_result_oc_cp is defined else 'No intentado' }}
+      - tar pipe: {{ 'Exitoso' if (copy_result_tar.rc | default(999) == 0) else 'Falló' if copy_result_tar is defined else 'No intentado' }}
 
 - name: Eliminar pod extractor
   command: oc delete pod {{ pod_name }} -n openshift-compliance {{ oc_context_arg | default('') }} --ignore-not-found=true
