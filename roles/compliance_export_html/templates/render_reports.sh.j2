@@ -12,18 +12,18 @@ echo ""
 
 # Verificar que el directorio existe
 if [ ! -d "$OUTPUT_DIR" ]; then
-    echo "❌ ERROR: El directorio $OUTPUT_DIR no existe"
+    echo "ERROR: El directorio $OUTPUT_DIR no existe"
     exit 1
 fi
 
 # Verificar herramientas necesarias
 if ! command -v oscap &> /dev/null; then
-    echo "❌ ERROR: oscap no está disponible"
+    echo "ERROR: oscap no está disponible"
     echo "   Instalar con: sudo apt-get install openscap-scanner"
     exit 1
 fi
 
-echo "✅ Herramientas verificadas: oscap disponible"
+echo "Herramientas verificadas: oscap disponible"
 echo ""
 
 # Paso 0: Copiar archivos .bzip2.out (ya descomprimidos)
@@ -36,12 +36,12 @@ if [ "$OUT_COUNT" -gt 0 ]; then
         xml_file="${out_file%.bzip2.out}"
         if [ ! -f "$xml_file" ]; then
             if cp "$out_file" "$xml_file" 2>/dev/null; then
-                echo "  ✅ Copiado: $(basename "$out_file") → $(basename "$xml_file")"
+                echo " Copiado: $(basename "$out_file") → $(basename "$xml_file")"
             else
-                echo "  ❌ Error al copiar: $(basename "$out_file")"
+                echo " Error al copiar: $(basename "$out_file")"
             fi
         else
-            echo "  ⏭️  Ya existe: $(basename "$xml_file")"
+            echo " Ya existe: $(basename "$xml_file")"
         fi
     done
     echo ""
@@ -69,7 +69,7 @@ if [ "$BZIP2_COUNT" -gt 0 ]; then
         
         # Verificar si el XML ya existe
         if [ -f "$xml_file" ]; then
-            echo "  ⏭️  Ya existe: $(basename "$xml_file") (saltando descompresión)"
+            echo " Ya existe: $(basename "$xml_file") (saltando descompresión)"
             continue
         fi
         
@@ -83,24 +83,24 @@ if [ "$BZIP2_COUNT" -gt 0 ]; then
                 if [ -f "$decompressed_file" ] && [ "$decompressed_file" != "$xml_file" ] && [[ "$decompressed_file" == *.bzip2 ]]; then
                     mv "$decompressed_file" "$xml_file" 2>/dev/null && echo "    ✅ Descomprimido y renombrado"
                 else
-                    echo "    ✅ Descomprimido"
+                    echo " Descomprimido"
                 fi
             else
-                echo "    ⚠️  Advertencia: No se pudo descomprimir $bzip_file"
+                echo " Advertencia: No se pudo descomprimir $bzip_file"
             fi
         elif command -v bzip2 &> /dev/null; then
             if bzip2 -dk "$bzip_file" 2>/dev/null; then
                 decompressed_file="${bzip_file%.bzip2}"
                 if [ -f "$decompressed_file" ] && [ "$decompressed_file" != "$xml_file" ] && [[ "$decompressed_file" == *.bzip2 ]]; then
-                    mv "$decompressed_file" "$xml_file" 2>/dev/null && echo "    ✅ Descomprimido y renombrado"
+                    mv "$decompressed_file" "$xml_file" 2>/dev/null && echo " Descomprimido y renombrado"
                 else
-                    echo "    ✅ Descomprimido"
+                    echo " Descomprimido"
                 fi
             else
-                echo "    ⚠️  Advertencia: No se pudo descomprimir $bzip_file"
+                echo " Advertencia: No se pudo descomprimir $bzip_file"
             fi
         else
-            echo "    ❌ Error: bunzip2 o bzip2 no están disponibles"
+            echo " Error: bunzip2 o bzip2 no están disponibles"
         fi
     done
     echo ""
@@ -113,7 +113,7 @@ echo "Paso 2: Convirtiendo archivos XML → HTML..."
 XML_COUNT=$(find "$OUTPUT_DIR" -name "*.xml" -type f ! -name "*.bzip2" ! -name "*.bzip2.out" 2>/dev/null | wc -l)
 
 if [ "$XML_COUNT" -eq 0 ]; then
-    echo "⚠️  Advertencia: No se encontraron archivos XML en $OUTPUT_DIR"
+    echo "Advertencia: No se encontraron archivos XML en $OUTPUT_DIR"
     echo "Esto puede indicar que los PVCs no contenían datos o hubo un error al copiarlos."
     echo ""
     echo "Buscando archivos disponibles en $OUTPUT_DIR:"
@@ -128,16 +128,16 @@ if [ "$XML_COUNT" -eq 0 ]; then
     find "$OUTPUT_DIR" -name "*.bzip2.out" -type f | while read out_file; do
         xml_file="${out_file%.bzip2.out}"
         if [ ! -f "$xml_file" ]; then
-            cp "$out_file" "$xml_file" 2>/dev/null && echo "  ✅ Copiado: $(basename "$out_file") → $(basename "$xml_file")"
+            cp "$out_file" "$xml_file" 2>/dev/null && echo " Copiado: $(basename "$out_file") → $(basename "$xml_file")"
         fi
     done
     # Recontar XML
     XML_COUNT=$(find "$OUTPUT_DIR" -name "*.xml" -type f ! -name "*.bzip2" ! -name "*.bzip2.out" 2>/dev/null | wc -l)
     if [ "$XML_COUNT" -eq 0 ]; then
-        echo "❌ No se pudieron generar archivos XML. Abortando conversión."
+        echo "No se pudieron generar archivos XML. Abortando conversión."
         exit 1
     else
-        echo "✅ Se generaron $XML_COUNT archivo(s) XML después del reintento"
+        echo "Se generaron $XML_COUNT archivo(s) XML después del reintento"
         echo ""
     fi
 fi
@@ -158,22 +158,22 @@ find "$OUTPUT_DIR" -name "*.xml" -type f ! -name "*.bzip2" ! -name "*.bzip2.out"
     
     # Usar oscap para generar HTML
     if oscap xccdf generate report "$xml_file" > "$html_file" 2>/dev/null; then
-        echo "  ✅ Generado: $(basename "$html_file")"
+        echo " Generado: $(basename "$html_file")"
     else
-        echo "  ⚠️  No se pudo convertir con oscap. Intentando método alternativo..."
+        echo " No se pudo convertir con oscap. Intentando método alternativo..."
         # Método alternativo: usar xsltproc si está disponible
         if command -v xsltproc &> /dev/null; then
             if [ -f "/usr/share/openscap/xsl/xccdf-report.xsl" ]; then
                 xsltproc /usr/share/openscap/xsl/xccdf-report.xsl "$xml_file" > "$html_file" 2>/dev/null && {
-                    echo "  ✅ Generado con xsltproc: $(basename "$html_file")"
+                    echo " Generado con xsltproc: $(basename "$html_file")"
                 } || {
-                    echo "  ❌ Error: No se pudo convertir $xml_file"
+                    echo " Error: No se pudo convertir $xml_file"
                 }
             else
-                echo "  ❌ Error: Archivo XSL no encontrado en /usr/share/openscap/xsl/xccdf-report.xsl"
+                echo " Error: Archivo XSL no encontrado en /usr/share/openscap/xsl/xccdf-report.xsl"
             fi
         else
-            echo "  ❌ Error: oscap y xsltproc no disponibles para convertir $xml_file"
+            echo " Error: oscap y xsltproc no disponibles para convertir $xml_file"
         fi
     fi
 done
@@ -187,4 +187,5 @@ HTML_COUNT=$(find "$OUTPUT_DIR" -name "*.html" -type f 2>/dev/null | wc -l)
 echo "Resumen:"
 echo "  - Archivos XML procesados: $XML_COUNT"
 echo "  - Archivos HTML generados: $HTML_COUNT"
+
 
