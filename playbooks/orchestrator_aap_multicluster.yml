@@ -154,7 +154,7 @@
 
     - name: Construir lista de clusters procesados exitosamente
       set_fact:
-        clusters_with_reports: "{{ all_zip_files.files | map('regex_replace', '.*/([^/]+)/.*\\.zip$', '\\1') | list | unique }}"
+        clusters_with_reports: "{{ all_zip_files.files | map(attribute='path') | map('regex_replace', '.*/([^/]+)/.*\\.zip$', '\\1') | list | unique }}"
       when: 
         - do_send_email | bool
         - all_zip_files is defined
@@ -173,6 +173,7 @@
         from: "{{ email_from }}"
         to: "{{ email_to_list }}"
         subject: "{{ email_subject_prefix }} - Reportes Multi-Cluster ({{ clusters_with_reports | default([]) | length }} clusters)"
+        timeout: "{{ email_smtp_timeout | default(60) }}"
         body: |
           Hola,
           
@@ -214,11 +215,29 @@
         attach: "{{ all_zip_files.files | map(attribute='path') | list }}"
         secure: starttls
       delegate_to: localhost
+      register: email_result
       when: 
         - do_send_email | bool
         - all_zip_files is defined
         - all_zip_files.files | length > 0
       ignore_errors: true
+
+    - name: Verificar resultado del envío de correo
+      debug:
+        msg: |
+          {% if email_result is defined and email_result.failed %}
+          ⚠️  El módulo de correo reportó un error, pero el correo puede haberse enviado correctamente.
+          Esto es común cuando se envían archivos grandes y el servidor SMTP cierra la conexión antes de confirmar.
+          Verifique su bandeja de entrada para confirmar la recepción.
+          Error técnico: {{ email_result.msg | default('Timeout o conexión cerrada') }}
+          {% elif email_result is defined and email_result.changed %}
+          ✅ Correo enviado exitosamente
+          {% else %}
+          ⚠️  Estado del envío desconocido
+          {% endif %}
+      when: 
+        - do_send_email | bool
+        - email_result is defined
 
     # ---------------------------------------------------------
     # 7. RESUMEN FINAL

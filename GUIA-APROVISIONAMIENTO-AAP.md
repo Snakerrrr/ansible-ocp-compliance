@@ -226,8 +226,11 @@ Ver sección detallada: [Configuración de Credenciales](#configuración-de-cred
 | `email_to` | string/list | Destinatario(s) | `"admin@empresa.com"` o `"admin@empresa.com,auditor@empresa.com"` |
 | `email_from` | string | Remitente (opcional) | `compliance@empresa.com` |
 | `email_subject_prefix` | string | Prefijo del asunto | `Reporte de compliance multicluster` |
+| `email_smtp_timeout` | integer | Timeout en segundos para operaciones SMTP (opcional) | `60` (default: 60) |
 
 **🔒 SEGURIDAD**: `email_smtp_password` debe configurarse como **Environment Variable** o **Machine Credential** (nunca en Survey o Extra Vars en texto plano).
+
+**ℹ️ NOTA**: Si experimentas timeouts al enviar correos con archivos grandes, aumenta `email_smtp_timeout` a 90 o 120 segundos.
 
 ### Variables de OpenShift (Opcionales)
 
@@ -538,6 +541,33 @@ Failed to send email: Authentication failed
 3. Verificar que `email_smtp_host` sea correcto
 4. Verificar que el firewall permita conexiones SMTP
 
+### Problema 4.1: Timeout al enviar correo (pero el correo se envía correctamente)
+
+**Síntoma:**
+```
+TimeoutError: The read operation timed out
+SMTPServerDisconnected: Connection unexpectedly closed: The read operation timed out
+```
+
+**Explicación:**
+Este es un problema común cuando se envían archivos grandes (ZIPs de reportes). El servidor SMTP procesa y envía el correo correctamente, pero cierra la conexión antes de que el cliente reciba la confirmación, causando un timeout.
+
+**Solución:**
+1. **Aumentar el timeout SMTP**: Agregar en Extra Variables:
+   ```yaml
+   email_smtp_timeout: 90
+   ```
+   O para archivos muy grandes:
+   ```yaml
+   email_smtp_timeout: 120
+   ```
+
+2. **Verificar recepción**: Aunque la tarea muestre error, el correo generalmente se envía correctamente. Verificar la bandeja de entrada.
+
+3. **El playbook maneja esto automáticamente**: El playbook tiene `ignore_errors: true` y muestra un mensaje informativo indicando que el correo puede haberse enviado a pesar del error.
+
+**Nota**: El timeout por defecto es de 60 segundos. Para archivos de más de 5MB, se recomienda aumentar a 90-120 segundos.
+
 ### Problema 5: Error al clonar repositorio GitOps
 
 **Síntoma:**
@@ -671,4 +701,6 @@ email_to:
 **Última actualización**: 2024-01-XX
 **Versión del Playbook**: 1.0
 **Autor**: Equipo de Automatización
+
+
 
