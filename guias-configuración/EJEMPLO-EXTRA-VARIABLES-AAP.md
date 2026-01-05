@@ -23,10 +23,11 @@ do_send_email: true      # ← true para enviar por correo
 email_smtp_host: "smtp.gmail.com"
 email_smtp_port: 587
 email_smtp_username: "bsoto@redhat.com"
-email_smtp_password: "swtgocesdjeasgbx"
-email_to: "bsoto@redhat.com"
+email_smtp_password: "swtgocesdjeasgbx"  # 🔒 Usar Environment Variable en producción
+email_to: "bsoto@redhat.com,jmunozag@redhat.com"  # Múltiples destinatarios separados por comas
 email_from: "jmunozag@redhat.com"
 email_subject_prefix: "Reporte AAP"
+email_smtp_timeout: 90  # Opcional: aumentar para archivos grandes (default: 60)
 
 # ============================================================
 # CONFIGURACIÓN GITOPS (Si do_gitops=true)
@@ -38,9 +39,11 @@ gitops_repo_branch: "main"      # Opcional, tiene default
 # ============================================================
 # CONFIGURACIÓN DE ESCANEOS
 # ============================================================
-cis_scan_enabled: true          # Habilitar escaneo CIS
-pci_scan_enabled: false         # Habilitar escaneo PCI-DSS
-scan_schedule: "0 2 * * *"      # Schedule cron (opcional)
+run_cis: true                   # Habilitar escaneo CIS (alternativa: cis_scan_enabled)
+run_pci: false                  # Habilitar escaneo PCI-DSS (alternativa: pci_scan_enabled)
+scan_schedule: "0 1 * * *"      # Schedule cron (default: "0 1 * * *" - 1 AM)
+scan_setting_name: "periodic-daily"  # Nombre del ScanSetting (default: "periodic-daily")
+scan_remediation_action: "inform"    # Acción de remediación: "inform" o "enforce"
 
 # ============================================================
 # CONFIGURACIÓN MULTI-CLUSTER (Para orchestrator)

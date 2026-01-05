@@ -152,22 +152,49 @@ EMAIL_FROM: compliance@banorte.com
 
 ## Ejecución Multi-Cluster
 
-Cuando ejecutas el playbook para múltiples clusters, se enviará **un correo por cada cluster**:
+Cuando ejecutas el playbook `orchestrator_aap_multicluster.yml` para múltiples clusters, se enviará **un solo correo consolidado** con todos los reportes:
 
 ```yaml
 # Extra Variables
 do_export_html: true
 do_send_email: true
+survey_target_clusters: "cluster-acs,cluster-2"
 
-# El script ejecutará el playbook para cada cluster
-# cluster-acs -> correo 1
-# cluster-2 -> correo 2
+# El playbook procesará todos los clusters y enviará UN correo al final
+# con todos los ZIPs consolidados
 ```
 
-Cada correo incluirá:
-- El nombre del cluster en el asunto
-- El archivo ZIP con los reportes de ese cluster
-- La fecha y hora de generación
+El correo consolidado incluirá:
+- **Un solo correo** con todos los clusters procesados
+- **Múltiples archivos ZIP adjuntos** (uno por cluster)
+- **Resumen de procesamiento** con lista de clusters
+- **Detalle de archivos** con tamaño de cada ZIP
+- **Soporte para múltiples destinatarios** (separados por comas)
+
+### Ejemplo de Correo Consolidado
+
+```
+Asunto: Reporte de compliance multicluster - Reportes Multi-Cluster (2 clusters)
+
+Cuerpo:
+📊 RESUMEN DE PROCESAMIENTO
+==========================
+Total de clusters procesados: 2
+Clusters: cluster-acs, cluster-2
+
+📦 DETALLE DE ARCHIVOS ADJUNTOS
+===============================
+• Cluster: cluster-acs
+  - Archivo: compliance_reports_cluster-acs_1767621683.zip
+  - Tamaño: 3.2 MB
+• Cluster: cluster-2
+  - Archivo: compliance_reports_cluster-2_1767621683.zip
+  - Tamaño: 3.2 MB
+
+Adjuntos:
+- compliance_reports_cluster-acs_1767621683.zip
+- compliance_reports_cluster-2_1767621683.zip
+```
 
 ## Troubleshooting
 
@@ -188,14 +215,21 @@ Cada correo incluirá:
 - Verifica que el usuario y password sean correctos
 - Verifica que el servidor SMTP sea accesible desde AAP
 
-### Error: "Connection timeout"
+### Error: "Connection timeout" o "TimeoutError: The read operation timed out"
 
-**Causa**: El servidor SMTP no es accesible desde AAP o el puerto está bloqueado.
+**Causa**: 
+1. El servidor SMTP no es accesible desde AAP o el puerto está bloqueado
+2. **O** el servidor SMTP procesó el correo correctamente pero cerró la conexión antes de confirmar (común con archivos grandes)
 
 **Solución**:
 - Verifica conectividad de red desde AAP al servidor SMTP
 - Verifica que el firewall permita el puerto SMTP (587 o 465)
 - Prueba con `telnet smtp.gmail.com 587` desde un Pod en AAP
+- **Para archivos grandes**: Aumenta `email_smtp_timeout` a 90 o 120 segundos:
+  ```yaml
+  email_smtp_timeout: 90  # En Extra Variables
+  ```
+- **Nota importante**: Si el error es "TimeoutError" pero el correo se envió correctamente, el playbook maneja esto automáticamente con `ignore_errors: true` y muestra un mensaje informativo
 
 ### Los reportes no se envían pero el playbook termina exitosamente
 
@@ -221,7 +255,7 @@ Cada correo incluirá:
 
 **Nombre**: `Compliance Pipeline - Export + Email`
 
-**Playbook**: `playbooks/compliance-pipeline.yml`
+**Playbook**: `playbooks/orchestrator_aap_multicluster.yml` (para multi-cluster) o `playbooks/compliance-pipeline.yml` (para single cluster)
 
 **Inventory**: `localhost`
 
@@ -238,8 +272,9 @@ EMAIL_SMTP_HOST: smtp.gmail.com
 EMAIL_SMTP_PORT: 587
 EMAIL_SMTP_USERNAME: compliance-automation@banorte.com
 EMAIL_SMTP_PASSWORD: "xxxx xxxx xxxx xxxx"
-EMAIL_TO: bastian@banorte.com
+EMAIL_TO: bastian@banorte.com,auditor@banorte.com  # Múltiples destinatarios separados por comas
 EMAIL_FROM: compliance-automation@banorte.com
+EMAIL_SMTP_TIMEOUT: 90  # Opcional: aumentar para archivos grandes
 ```
 
 **Execution Environment**: `ee-compliance` (tu EE personalizado)

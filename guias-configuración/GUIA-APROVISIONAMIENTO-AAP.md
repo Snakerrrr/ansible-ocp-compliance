@@ -96,7 +96,8 @@
 3. **Rol Export HTML**: `compliance_export_html`
    - Extrae reportes desde PVCs
    - Genera reportes HTML
-   - Comprime en ZIP
+   - Comprime en ZIP por cluster
+   - **Nota**: No envía correos individuales (el orquestador maneja el correo consolidado)
 
 4. **Rol Toggle Policies**: `toggle_policies`
    - Genera `policy-generator-config.yaml`
