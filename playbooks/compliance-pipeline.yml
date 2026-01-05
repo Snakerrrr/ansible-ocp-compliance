@@ -41,7 +41,7 @@
           - gitops_repo_branch | length > 0
           - github_token is defined
           - github_token | length > 0
-        fail_msg: "❌ ERROR: Faltan variables de Git. Defínalas en AAP (Extra Vars, Survey o Credential de Source Control)."
+        fail_msg: "ERROR: Faltan variables de Git. Defínalas en AAP (Extra Vars, Survey o Credential de Source Control)."
       when: do_gitops | bool
 
     - name: Validar variables obligatorias de correo
@@ -55,7 +55,7 @@
           - email_smtp_password | length > 0
           - email_to is defined
           - email_to | length > 0
-        fail_msg: "❌ ERROR: Faltan variables de Correo. Defínalas en AAP (Extra Vars o Survey)."
+        fail_msg: "ERROR: Faltan variables de Correo. Defínalas en AAP (Extra Vars o Survey)."
       when: do_send_email | bool
 
     - name: Validar flags de control
@@ -73,7 +73,7 @@
     - name: Mostrar configuración recibida (Sin secretos)
       debug:
         msg: |
-          🚀 INICIO DE PIPELINE DE COMPLIANCE
+          INICIO DE PIPELINE DE COMPLIANCE
           ====================================
           GitOps:         {{ do_gitops }}
           Export HTML:    {{ do_export_html }}
@@ -170,7 +170,7 @@
         - name: Advertir si el módulo mail no está disponible
           debug:
             msg: |
-              ⚠️  ADVERTENCIA: El módulo mail de Ansible no está disponible.
+              ADVERTENCIA: El módulo mail de Ansible no está disponible.
               
               El módulo mail requiere las librerías Python:
               - smtplib (normalmente incluida en Python estándar)
@@ -221,7 +221,7 @@
         - name: Advertir si no se encontró archivo ZIP
           debug:
             msg: |
-              ⚠️  No se encontró archivo ZIP en {{ export_output_dir }}.
+              No se encontró archivo ZIP en {{ export_output_dir }}.
               El correo se enviará sin adjuntos.
           when: 
             - mail_module_check.rc == 0
@@ -321,7 +321,7 @@
         - name: Informar que correo se envió exitosamente
           debug:
             msg: |
-              ✅ Correo enviado exitosamente a {{ email_to }}
+              Correo enviado exitosamente a {{ email_to }}
               Asunto: {{ email_subject }}
               {% if zip_file_to_send != '' %}
               Archivo adjunto: {{ zip_file_to_send | basename }}
@@ -335,7 +335,7 @@
         - name: Advertir si el envío de correo falló
           debug:
             msg: |
-              ⚠️  El envío de correo falló. Verifica:
+              El envío de correo falló. Verifica:
               1. Que el módulo mail esté disponible en el Execution Environment
               2. Que las credenciales SMTP sean correctas
               3. Que el servidor SMTP sea accesible desde AAP

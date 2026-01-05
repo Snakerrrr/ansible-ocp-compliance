@@ -201,11 +201,11 @@
 
     - name: Informar que el Compliance Operator está instalado
       debug:
-        msg: "✅ Compliance Operator instalado y funcionando en el namespace {{ compliance_namespace }}. {{ 'Detalles: ' + operator_status.stdout if (operator_status is defined and operator_status.stdout is defined and operator_status.stdout != '') else 'Verificado correctamente.' }}"
+        msg: "Compliance Operator instalado y funcionando en el namespace {{ compliance_namespace }}. {{ 'Detalles: ' + operator_status.stdout if (operator_status is defined and operator_status.stdout is defined and operator_status.stdout != '') else 'Verificado correctamente.' }}"
 
     - name: Informar sobre escaneos periódicos
       debug:
         msg: |
-          ℹ️  Los escaneos de compliance se ejecutarán automáticamente según el schedule configurado en ScanSetting.
+          Los escaneos de compliance se ejecutarán automáticamente según el schedule configurado en ScanSetting.
           No es necesario esperar manualmente a que completen, ya que se ejecutarán de forma periódica.
           Los resultados estarán disponibles en los PVCs cuando se ejecute el export HTML.

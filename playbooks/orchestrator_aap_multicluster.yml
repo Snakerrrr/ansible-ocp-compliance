@@ -30,7 +30,7 @@
           - gitops_repo_branch | length > 0
           - github_token is defined
           - github_token | length > 0
-        fail_msg: "❌ ERROR: Faltan variables de Git. Defínalas en AAP (Extra Vars, Survey o Credential de Source Control)."
+        fail_msg: "ERROR: Faltan variables de Git. Defínalas en AAP (Extra Vars, Survey o Credential de Source Control)."
       when: do_gitops | bool
 
     - name: Validar variables obligatorias de correo
@@ -44,7 +44,7 @@
           - email_smtp_password | length > 0
           - email_to is defined
           - email_to | length > 0
-        fail_msg: "❌ ERROR: Faltan variables de Correo. Defínalas en AAP (Extra Vars o Survey)."
+        fail_msg: "ERROR: Faltan variables de Correo. Defínalas en AAP (Extra Vars o Survey)."
       when: do_send_email | bool
 
     - name: Validar flags de control
@@ -73,7 +73,7 @@
     - name: Mostrar configuración recibida (Sin secretos)
       debug:
         msg: |
-          🚀 INICIO DE PIPELINE MULTI-CLUSTER
+          INICIO DE PIPELINE MULTI-CLUSTER
           ====================================
           Clusters:       {{ target_clusters_list }}
           GitOps:         {{ do_gitops }}
@@ -179,12 +179,12 @@
           
           Se adjuntan los reportes de cumplimiento consolidados de todos los clusters procesados.
           
-          📊 RESUMEN DE PROCESAMIENTO
+          RESUMEN DE PROCESAMIENTO
           ==========================
           Total de clusters procesados: {{ clusters_with_reports | default([]) | length }}
           Clusters: {{ clusters_with_reports | default([]) | join(', ') }}
           
-          📦 DETALLE DE ARCHIVOS ADJUNTOS
+          DETALLE DE ARCHIVOS ADJUNTOS
           ===============================
           {% if clusters_with_reports is defined and clusters_with_reports | length > 0 %}
           {% for cluster in clusters_with_reports %}
@@ -208,7 +208,7 @@
           
           ℹ️  NOTA IMPORTANTE
           ==================
-          Los archivos XML crudos permanecen en el servidor para auditoría si fueran necesarios.
+          Verifica el % de cumplimiento de los estándares en los archivos adjuntos, con base a esa revisión, aplica las remediaciones.
           
           Saludos,
           Equipo de Automatización.
@@ -226,14 +226,14 @@
       debug:
         msg: |
           {% if email_result is defined and email_result.failed %}
-          ⚠️  El módulo de correo reportó un error, pero el correo puede haberse enviado correctamente.
+          El módulo de correo reportó un error, pero el correo puede haberse enviado correctamente.
           Esto es común cuando se envían archivos grandes y el servidor SMTP cierra la conexión antes de confirmar.
           Verifique su bandeja de entrada para confirmar la recepción.
           Error técnico: {{ email_result.msg | default('Timeout o conexión cerrada') }}
           {% elif email_result is defined and email_result.changed %}
-          ✅ Correo enviado exitosamente
+          Correo enviado exitosamente
           {% else %}
-          ⚠️  Estado del envío desconocido
+          Estado del envío desconocido
           {% endif %}
       when: 
         - do_send_email | bool
@@ -245,9 +245,9 @@
     - name: Resumen de ubicación de reportes
       debug:
         msg: |
-          ✅ Los reportes se han guardado en: {{ export_output_dir }}/<nombre-cluster>/
+          Los reportes se han guardado en: {{ export_output_dir }}/<nombre-cluster>/
           {% if do_send_email | bool and all_zip_files is defined and all_zip_files.files | length > 0 %}
-          📧 Correo consolidado enviado con {{ all_zip_files.files | length }} archivo(s) de {{ clusters_with_reports | default([]) | length }} cluster(s)
+          Correo consolidado enviado con {{ all_zip_files.files | length }} archivo(s) de {{ clusters_with_reports | default([]) | length }} cluster(s)
           {% elif do_send_email | bool %}
-          ⚠️  No se encontraron reportes para enviar por correo
+          No se encontraron reportes para enviar por correo
           {% endif %}
