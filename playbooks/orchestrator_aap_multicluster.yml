@@ -22,7 +22,7 @@
     # 1. VALIDACIÓN DE INPUTS (Semáforo de Seguridad)
     # ---------------------------------------------------------
     - name: Validar variables obligatorias de infraestructura Git
-      assert:
+      ansible.builtin.assert:
         that:
           - github_user is defined
           - github_user | length > 0
@@ -34,7 +34,7 @@
       when: do_gitops | bool
 
     - name: Validar variables obligatorias de correo
-      assert:
+      ansible.builtin.assert:
         that:
           - email_smtp_host is defined
           - email_smtp_host | length > 0
@@ -48,7 +48,7 @@
       when: do_send_email | bool
 
     - name: Validar flags de control
-      fail:
+      ansible.builtin.fail:
         msg: "Al menos uno de los flags debe estar activado: do_gitops o do_export_html"
       when: not do_gitops and not do_export_html
 
@@ -56,14 +56,14 @@
     # 2. NORMALIZACIÓN DE DATOS (Sanitización)
     # ---------------------------------------------------------
     - name: Normalizar lista de clusters desde AAP
-      set_fact:
+      ansible.builtin.set_fact:
         # AAP a veces envía la lista como string separado por comas o saltos de línea
         # Esto asegura que siempre tengamos una lista válida de Python
         target_clusters_list: "{{ survey_target_clusters.split('\n') if survey_target_clusters is string else survey_target_clusters }}"
       when: survey_target_clusters is defined
 
     - name: Inicializar lista vacía si no se definió survey_target_clusters
-      set_fact:
+      ansible.builtin.set_fact:
         target_clusters_list: []
       when: survey_target_clusters is not defined
 
@@ -71,7 +71,7 @@
     # 3. DEBUG INFORMATIVO (Para ver qué recibió el playbook)
     # ---------------------------------------------------------
     - name: Mostrar configuración recibida (Sin secretos)
-      debug:
+      ansible.builtin.debug:
         msg: |
           INICIO DE PIPELINE MULTI-CLUSTER
           ====================================
@@ -89,7 +89,7 @@
     # 4. FASE GITOPS (Se ejecuta UNA vez al inicio)
     # ---------------------------------------------------------
     - name: Ejecutar Fase GitOps (Configuración Global)
-      include_role:
+      ansible.builtin.include_role:
         name: gitops_policy_update
       vars:
         # Pasar variables directamente del playbook
@@ -114,7 +114,7 @@
     # 5. FASE EXTRACCIÓN (Bucle por cada Cluster)
     # ---------------------------------------------------------
     - name: "Procesando extracción para {{ item }}"
-      include_role:
+      ansible.builtin.include_role:
         name: compliance_export_html
       vars:
         # INYECCIÓN DINÁMICA DE CONTEXTO - CRÍTICO: Usar item directamente sin default
@@ -141,7 +141,7 @@
     # 6. ENVÍO CONSOLIDADO DE CORREOS (Todos los clusters juntos)
     # ---------------------------------------------------------
     - name: Buscar todos los ZIPs generados por cluster
-      find:
+      ansible.builtin.find:
         paths: "{{ export_output_dir }}"
         patterns: "*.zip"
         recurse: yes
@@ -153,7 +153,7 @@
         - target_clusters_list | length > 0
 
     - name: Construir lista de clusters procesados exitosamente
-      set_fact:
+      ansible.builtin.set_fact:
         clusters_with_reports: "{{ all_zip_files.files | map(attribute='path') | map('regex_replace', '.*/([^/]+)/.*\\.zip$', '\\1') | list | unique }}"
       when: 
         - do_send_email | bool
@@ -161,7 +161,7 @@
         - all_zip_files.files | length > 0
 
     - name: Normalizar email_to a lista (soporta múltiples destinatarios)
-      set_fact:
+      ansible.builtin.set_fact:
         email_to_list: "{{ email_to.split(',') if email_to is string else (email_to if email_to is iterable and email_to is not string else [email_to]) }}"
 
     - name: Enviar correo consolidado con todos los reportes
@@ -223,7 +223,7 @@
       ignore_errors: true
 
     - name: Verificar resultado del envío de correo
-      debug:
+      ansible.builtin.debug:
         msg: |
           {% if email_result is defined and email_result.failed %}
           El módulo de correo reportó un error, pero el correo puede haberse enviado correctamente.
@@ -243,7 +243,7 @@
     # 7. RESUMEN FINAL
     # ---------------------------------------------------------
     - name: Resumen de ubicación de reportes
-      debug:
+      ansible.builtin.debug:
         msg: |
           Los reportes se han guardado en: {{ export_output_dir }}/<nombre-cluster>/
           {% if do_send_email | bool and all_zip_files is defined and all_zip_files.files | length > 0 %}

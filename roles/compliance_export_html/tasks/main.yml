@@ -4,13 +4,13 @@
 # Se ejecuta desde el HUB y puede acceder a managed clusters usando kubeconfig
 
 - name: Verificar que oc está disponible
-  command: oc version --client
+  ansible.builtin.command: oc version --client
   register: oc_version
   changed_when: false
   failed_when: false
 
 - name: Verificar si el kubeconfig está configurado
-  shell: |
+  ansible.builtin.shell: |
     oc config view --minify --raw 2>&1 || echo "NO_KUBECONFIG"
   register: kubeconfig_check
   changed_when: false
@@ -18,12 +18,12 @@
   when: oc_version.rc == 0
 
 - name: Determinar si se puede usar oc para buscar secrets
-  set_fact:
+  ansible.builtin.set_fact:
     can_use_oc: "{{ oc_version.rc == 0 and kubeconfig_check.stdout is defined and 'NO_KUBECONFIG' not in kubeconfig_check.stdout }}"
   when: oc_version.rc == 0
 
 - name: Advertir si oc no está disponible o no tiene kubeconfig
-  debug:
+  ansible.builtin.debug:
     msg: |
       ADVERTENCIA: El comando 'oc' no está disponible o no tiene kubeconfig configurado.
       
@@ -38,7 +38,7 @@
   when: oc_version.rc != 0 or (kubeconfig_check.stdout is defined and 'NO_KUBECONFIG' in kubeconfig_check.stdout)
 
 - name: DEBUG - Verificar contexto recibido
-  debug:
+  ansible.builtin.debug:
     msg:
       - "=========================================="
       - "CONTEXTO RECIBIDO EN EL ROL"
@@ -49,22 +49,22 @@
       - "=========================================="
 
 - name: Establecer variables iniciales básicas
-  set_fact:
+  ansible.builtin.set_fact:
     # CRÍTICO: No usar default('') aquí - si viene del orchestrator, debe tener valor
     # Si no viene definido, entonces sí usar default
     target_cluster_context: "{{ target_cluster_context if target_cluster_context is defined else '' }}"
     managed_cluster_name: "{{ managed_cluster_name if managed_cluster_name is defined else (target_cluster_context if target_cluster_context is defined else '') }}"
 
 - name: Establecer kubeconfig_secret_namespace (valor por defecto basado en managed_cluster_name)
-  set_fact:
+  ansible.builtin.set_fact:
     kubeconfig_secret_namespace: "{{ managed_cluster_name if (target_cluster_context != '' and managed_cluster_name != '') else 'openshift-compliance' }}"
 
 - name: Establecer managed_cluster_kubeconfigs (siempre usar diccionario vacío por defecto)
-  set_fact:
+  ansible.builtin.set_fact:
     _managed_cluster_kubeconfigs: "{{ {} }}"
 
 - name: Establecer lista de nombres de secrets de ACM
-  set_fact:
+  ansible.builtin.set_fact:
     acm_secret_names: "{{ ['admin-kubeconfig', managed_cluster_name + '-import', managed_cluster_name + '-bootstrap-sa-token'] }}"
 
 - name: Buscar secret admin-kubeconfig en el Hub (Nativo - Prioridad 1)
@@ -88,13 +88,13 @@
   ignore_errors: true
 
 - name: Validar hallazgos de secrets
-  set_fact:
+  ansible.builtin.set_fact:
     found_admin_secret: "{{ hub_admin_secret.resources | default([]) | length > 0 }}"
     found_import_secret: "{{ hub_import_secret.resources | default([]) | length > 0 }}"
   when: target_cluster_context != ''
 
 - name: Extraer kubeconfig desde admin-kubeconfig (Prioridad 1)
-  set_fact:
+  ansible.builtin.set_fact:
     kubeconfig_from_admin:
       stdout: "{{ hub_admin_secret.resources[0].data.kubeconfig | b64decode }}"
       rc: 0
@@ -107,7 +107,7 @@
     - hub_admin_secret.resources[0].data.kubeconfig is defined
 
 - name: Guardar kubeconfig desde admin-kubeconfig a archivo temporal
-  copy:
+  ansible.builtin.copy:
     content: "{{ kubeconfig_from_admin.stdout }}"
     dest: "/tmp/kubeconfig-{{ managed_cluster_name }}"
     mode: '0600'
@@ -119,7 +119,7 @@
     - kubeconfig_from_admin.stdout | length > 100
 
 - name: Extraer import.yaml del secret de importación (Prioridad 2)
-  set_fact:
+  ansible.builtin.set_fact:
     import_yaml_b64: "{{ hub_import_secret.resources[0].data['import.yaml'] }}"
     import_yaml_raw:
       stdout: "{{ hub_import_secret.resources[0].data['import.yaml'] | b64decode }}"
@@ -130,7 +130,7 @@
     - hub_import_secret.resources[0].data['import.yaml'] is defined
 
 - name: Inicializar variables si no se encontraron secrets
-  set_fact:
+  ansible.builtin.set_fact:
     kubeconfig_from_admin:
       stdout: ""
       rc: 1
@@ -143,7 +143,7 @@
     - not (found_import_secret | default(false) | bool)
 
 - name: Advertir si no se encontraron secrets de kubeconfig
-  debug:
+  ansible.builtin.debug:
     msg: |
       No se encontraron secrets de kubeconfig en el namespace '{{ managed_cluster_name }}'.
       
@@ -160,12 +160,12 @@
     - not (found_import_secret | default(false) | bool)
 
 - name: Establecer ruta del archivo temporal import.yaml
-  set_fact:
+  ansible.builtin.set_fact:
     import_yaml_file: "/tmp/import-{{ managed_cluster_name }}.yaml"
   when: target_cluster_context != ''
 
 - name: Guardar import.yaml en archivo temporal
-  copy:
+  ansible.builtin.copy:
     content: "{{ import_yaml_raw.stdout }}"
     dest: "{{ import_yaml_file }}"
     mode: '0600'
@@ -175,7 +175,7 @@
     - import_yaml_raw.stdout | length > 100
 
 - name: Crear script temporal para extraer kubeconfig
-  template:
+  ansible.builtin.template:
     src: extract-kubeconfig.sh.j2
     dest: "/tmp/extract-kubeconfig-{{ managed_cluster_name }}.sh"
     mode: '0755'
@@ -185,7 +185,7 @@
     - import_yaml_raw.stdout | length > 100
 
 - name: Extraer kubeconfig desde bootstrap-hub-kubeconfig en import.yaml
-  command: "/tmp/extract-kubeconfig-{{ managed_cluster_name }}.sh {{ import_yaml_file }}"
+  ansible.builtin.command: "/tmp/extract-kubeconfig-{{ managed_cluster_name }}.sh {{ import_yaml_file }}"
   register: kubeconfig_from_import
   changed_when: false
   failed_when: false
@@ -196,7 +196,7 @@
 
 
 - name: Determinar kubeconfig final desde secrets de ACM (priorizar admin-kubeconfig sobre bootstrap-hub-kubeconfig)
-  set_fact:
+  ansible.builtin.set_fact:
     kubeconfig_from_acm_secret: "{{ kubeconfig_from_admin if (kubeconfig_from_admin.stdout is defined and kubeconfig_from_admin.stdout != '' and kubeconfig_from_admin.stdout | length > 100) else (kubeconfig_from_import if (kubeconfig_from_import.stdout is defined and kubeconfig_from_import.stdout != '' and kubeconfig_from_import.stdout | length > 100) else {'rc': 1, 'stdout': ''}) }}"
   when: target_cluster_context != ''
 
@@ -211,7 +211,7 @@
   ignore_errors: true
 
 - name: Extraer kubeconfig desde secret personalizado
-  set_fact:
+  ansible.builtin.set_fact:
     kubeconfig_from_custom_secret:
       stdout: "{{ hub_custom_secret.resources[0].data.kubeconfig | b64decode }}"
       rc: 0
@@ -221,7 +221,7 @@
     - hub_custom_secret.resources[0].data.kubeconfig is defined
 
 - name: Marcar kubeconfig personalizado como no encontrado
-  set_fact:
+  ansible.builtin.set_fact:
     kubeconfig_from_custom_secret:
       stdout: ""
       rc: 1
@@ -230,13 +230,13 @@
     - hub_custom_secret.resources | default([]) | length == 0
 
 - name: Determinar qué secret se usó
-  set_fact:
+  ansible.builtin.set_fact:
     kubeconfig_from_secret: "{{ kubeconfig_from_acm_secret if (kubeconfig_from_acm_secret.rc == 0 and kubeconfig_from_acm_secret.stdout != '' and kubeconfig_from_acm_secret.stdout | length > 100) else (kubeconfig_from_custom_secret if (kubeconfig_from_custom_secret.rc == 0 and kubeconfig_from_custom_secret.stdout != '' and kubeconfig_from_custom_secret.stdout | length > 100) else {'rc': 1, 'stdout': ''}) }}"
     secret_source: "{{ 'admin_kubeconfig' if (kubeconfig_from_admin.stdout is defined and kubeconfig_from_admin.stdout != '' and kubeconfig_from_admin.stdout | length > 100) else ('bootstrap_hub_kubeconfig' if (kubeconfig_from_import.stdout is defined and kubeconfig_from_import.stdout != '' and kubeconfig_from_import.stdout | length > 100) else ('custom' if (kubeconfig_from_custom_secret.rc == 0 and kubeconfig_from_custom_secret.stdout != '' and kubeconfig_from_custom_secret.stdout | length > 100) else 'none')) }}"
   when: target_cluster_context != ''
 
 - name: Guardar kubeconfig desde secret a archivo temporal
-  copy:
+  ansible.builtin.copy:
     content: "{{ kubeconfig_from_secret.stdout }}"
     dest: "/tmp/kubeconfig-{{ managed_cluster_name }}"
     mode: '0600'
@@ -248,7 +248,7 @@
     - kubeconfig_from_secret.stdout | length > 100
 
 - name: Determinar ruta del kubeconfig del managed cluster (fallback a archivo local)
-  set_fact:
+  ansible.builtin.set_fact:
     managed_cluster_kubeconfig_path: "{{ ('/tmp/kubeconfig-' + managed_cluster_name) if (target_cluster_context != '' and secret_source != 'none') else (_managed_cluster_kubeconfigs[managed_cluster_name] if (target_cluster_context != '' and _managed_cluster_kubeconfigs is defined and managed_cluster_name in _managed_cluster_kubeconfigs) else ('/tmp/kubeconfig-' + managed_cluster_name if target_cluster_context != '' else '')) }}"
     oc_context_arg: ""
     is_managed_cluster: "{{ target_cluster_context != '' }}"
@@ -256,7 +256,7 @@
   when: target_cluster_context != ''
 
 - name: Verificar si existe kubeconfig en archivo (fallback)
-  stat:
+  ansible.builtin.stat:
     path: "{{ managed_cluster_kubeconfig_path }}"
   register: kubeconfig_exists
   when:
@@ -267,7 +267,7 @@
     - kubeconfig_source != 'custom'
 
 - name: Verificar validez del kubeconfig
-  shell: |
+  ansible.builtin.shell: |
     KUBECONFIG="{{ managed_cluster_kubeconfig_path }}" oc whoami &>/dev/null && echo "valid" || echo "invalid"
   register: kubeconfig_validity
   changed_when: false
@@ -277,7 +277,7 @@
     - (kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists)
 
 - name: Advertir si el kubeconfig está expirado
-  debug:
+  ansible.builtin.debug:
     msg: |
       El kubeconfig para '{{ target_cluster_context }}' está expirado o inválido.
       
@@ -302,7 +302,7 @@
     - kubeconfig_validity.stdout == "invalid"
 
 - name: Fallar si no se puede acceder al managed cluster
-  fail:
+  ansible.builtin.fail:
     msg: |
       No se encontró kubeconfig para el managed cluster '{{ target_cluster_context }}'.
       
@@ -328,7 +328,7 @@
     - not ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))
 
 - name: Mostrar método de acceso al cluster
-  debug:
+  ansible.builtin.debug:
     msg: |
       ========================================
       Método de Acceso al Cluster
@@ -346,58 +346,58 @@
   when: target_cluster_context != ''
 
 - name: Verificar que oscap está disponible
-  command: oscap --version
+  ansible.builtin.command: oscap --version
   register: oscap_check
   changed_when: false
   failed_when: false
 
 - name: Fallar si oscap no está disponible
-  fail:
+  ansible.builtin.fail:
     msg: "oscap (openscap-scanner) no está disponible. Instalar con: yum install openscap-scanner"
   when: oscap_check.rc != 0
 
 - name: Verificar que bzip2 está disponible
-  command: which bunzip2 || which bzip2
+  ansible.builtin.command: which bunzip2 || which bzip2
   register: bzip2_check
   changed_when: false
   failed_when: false
 
 - name: Advertir si bzip2 no está disponible
-  debug:
+  ansible.builtin.debug:
     msg: "Advertencia: bunzip2/bzip2 no está disponible. Los archivos .bzip2 no se podrán descomprimir automáticamente."
   when: bzip2_check.rc != 0
 
 - name: Verificar que zip está disponible
-  command: which zip
+  ansible.builtin.command: which zip
   register: zip_check
   changed_when: false
   failed_when: false
 
 - name: Advertir si zip no está disponible
-  debug:
+  ansible.builtin.debug:
     msg: "Advertencia: zip no está disponible. No se podrá crear el archivo ZIP. Instalar con: sudo apt-get install zip"
   when: zip_check.rc != 0
 
 - name: Crear directorio de salida (organizado por cluster)
-  file:
+  ansible.builtin.file:
     path: "{{ compliance_reports_path }}"
     state: directory
     mode: '0755'
     recurse: yes
 
 - name: Buscar PVCs de compliance
-  command: oc get pvc -n openshift-compliance {{ oc_context_arg | default('') }} --no-headers -o custom-columns=NAME:.metadata.name
+  ansible.builtin.command: oc get pvc -n openshift-compliance {{ oc_context_arg | default('') }} --no-headers -o custom-columns=NAME:.metadata.name
   register: pvc_list
   changed_when: false
   environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (target_cluster_context != '' and managed_cluster_kubeconfig_path is defined and managed_cluster_kubeconfig_path != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else {} }}"
 
 - name: Filtrar PVCs CIS y PCI
-  set_fact:
+  ansible.builtin.set_fact:
     cis_pvcs: "{{ pvc_list.stdout_lines | select('match', '^ocp4-cis.*') | list }}"
     pci_pvcs: "{{ pvc_list.stdout_lines | select('match', '^ocp4-pci-dss.*') | list }}"
 
 - name: Mostrar PVCs encontrados
-  debug:
+  ansible.builtin.debug:
     msg: |
       ========================================
       PVCs Encontrados en {{ managed_cluster_name if target_cluster_context != '' else 'HUB' }}
@@ -410,13 +410,13 @@
       Si no coinciden, verifica que los scans de compliance hayan completado correctamente.
 
 - name: Establecer valores finales para sub-tareas
-  set_fact:
+  ansible.builtin.set_fact:
     _final_managed_cluster_kubeconfig_path: "{{ managed_cluster_kubeconfig_path if (target_cluster_context != '' and managed_cluster_kubeconfig_path is defined and managed_cluster_kubeconfig_path != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else '' }}"
     _final_oc_context_arg: "{{ oc_context_arg | default('') }}"
 
 - name: Procesar cada PVC CIS
   when: cis_pvcs | length > 0
-  include_tasks: process_pvc.yml
+  ansible.builtin.include_tasks: process_pvc.yml
   loop: "{{ cis_pvcs }}"
   loop_control:
     loop_var: pvc_item
@@ -429,7 +429,7 @@
 
 - name: Procesar cada PVC PCI
   when: pci_pvcs | length > 0
-  include_tasks: process_pvc.yml
+  ansible.builtin.include_tasks: process_pvc.yml
   loop: "{{ pci_pvcs }}"
   loop_control:
     loop_var: pvc_item
@@ -443,7 +443,7 @@
 # --- TAREAS DE PREPARACIÓN DE DATOS (Descomprimir y Aplanar) ---
 
 - name: Descomprimir archivos .bzip2 (Recursivo en todas las carpetas de PVC)
-  shell: |
+  ansible.builtin.shell: |
     find "{{ compliance_reports_path }}" -type d -name "ocp4-*" | while read pvc_dir; do
       if [ -d "$pvc_dir" ]; then
         echo "Descomprimiendo archivos en: $pvc_dir"
@@ -456,7 +456,7 @@
   register: decompression_result
 
 - name: Aplanar estructura de directorios (Mover XMLs de subdirectorios a la raíz de cada PVC)
-  shell: |
+  ansible.builtin.shell: |
     find "{{ compliance_reports_path }}" -type d -name "ocp4-*" | while read pvc_dir; do
       if [ -d "$pvc_dir" ]; then
         echo "Aplanando XMLs en: $pvc_dir"
@@ -470,13 +470,13 @@
   register: flatten_result
 
 - name: Renderizar script de conversión XML → HTML
-  template:
+  ansible.builtin.template:
     src: render_reports.sh.j2
     dest: "{{ compliance_reports_path }}/render_reports.sh"
     mode: '0755'
 
 - name: Ejecutar conversión XML → HTML
-  command: "{{ compliance_reports_path }}/render_reports.sh"
+  ansible.builtin.command: "{{ compliance_reports_path }}/render_reports.sh"
   args:
     chdir: "{{ compliance_reports_path }}"
   register: render_script_output
@@ -484,14 +484,14 @@
   failed_when: false
 
 - name: Verificar archivos HTML generados
-  find:
+  ansible.builtin.find:
     paths: "{{ compliance_reports_path }}"
     patterns: "*.html"
     recurse: true
   register: html_files
 
 - name: Generar summary.txt
-  template:
+  ansible.builtin.template:
     src: summary.txt.j2
     dest: "{{ compliance_reports_path }}/summary.txt"
     mode: '0644'
@@ -502,7 +502,7 @@
 
 # --- VERIFICACIÓN DE DEBUG (Para saber por qué no llega el correo) ---
 - name: DEBUG - Estado previo al correo
-  debug:
+  ansible.builtin.debug:
     msg:
       - "Variable do_send_email: {{ do_send_email }}"
       - "Variable email_to: {{ email_to }}"
@@ -512,7 +512,7 @@
 # --- EMPAQUETADO (Solución para evitar límite de tamaño de Gmail) ---
 
 - name: Buscar archivos HTML y summary para comprimir
-  find:
+  ansible.builtin.find:
     paths: "{{ compliance_reports_path }}"
     patterns: 
       - "*.html"       # Solo HTMLs (excluimos XML pesados)

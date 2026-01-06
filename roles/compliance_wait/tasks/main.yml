@@ -5,36 +5,36 @@
 # NOTA: Los escaneos se ejecutan automáticamente según el schedule configurado en ScanSetting
 
 - name: Establecer variables iniciales básicas (sin recursión)
-  set_fact:
+  ansible.builtin.set_fact:
     _target_cluster_context_temp: ""
     managed_cluster_name: ""
 
 - name: Actualizar target_cluster_context si está definido
-  set_fact:
+  ansible.builtin.set_fact:
     _target_cluster_context_temp: "{{ target_cluster_context }}"
     managed_cluster_name: "{{ target_cluster_context }}"
   when: target_cluster_context is defined
 
 - name: Usar target_cluster_context establecido
-  set_fact:
+  ansible.builtin.set_fact:
     target_cluster_context: "{{ _target_cluster_context_temp }}"
 
 - name: Establecer compliance_namespace (valor por defecto si no se pasó explícitamente)
-  set_fact:
+  ansible.builtin.set_fact:
     _compliance_namespace: "{{ compliance_namespace if (compliance_namespace is defined and compliance_namespace != '') else 'openshift-compliance' }}"
 
 - name: Usar compliance_namespace establecido
-  set_fact:
+  ansible.builtin.set_fact:
     compliance_namespace: "{{ _compliance_namespace }}"
 
 - name: Establecer variables de espera (sin recursión)
-  set_fact:
+  ansible.builtin.set_fact:
     _wait_timeout: "{{ wait_timeout if (wait_timeout is defined and wait_timeout != '') else 3600 }}"
     _wait_interval: "{{ wait_interval if (wait_interval is defined and wait_interval != '') else 30 }}"
     _wait_for_operator: "{{ wait_for_operator if (wait_for_operator is defined) else true }}"
 
 - name: Usar variables de espera establecidas
-  set_fact:
+  ansible.builtin.set_fact:
     wait_timeout: "{{ _wait_timeout | int }}"
     wait_interval: "{{ _wait_interval | int }}"
     wait_for_operator: "{{ _wait_for_operator | bool }}"
@@ -45,14 +45,14 @@
     - managed_cluster_kubeconfig_path is not defined or (managed_cluster_kubeconfig_path is defined and managed_cluster_kubeconfig_path == '')
   block:
     - name: Buscar admin-kubeconfig (prioridad - kubeconfig del managed cluster)
-      shell: |
+      ansible.builtin.shell: |
         oc get secret admin-kubeconfig -n {{ managed_cluster_name }} -o jsonpath='{.data.kubeconfig}' 2>&1 | base64 -d || echo ""
       register: kubeconfig_from_admin
       changed_when: false
       failed_when: false
 
     - name: Guardar kubeconfig a archivo temporal si se encontró
-      copy:
+      ansible.builtin.copy:
         content: "{{ kubeconfig_from_admin.stdout }}"
         dest: "/tmp/kubeconfig-{{ managed_cluster_name }}"
         mode: '0600'
@@ -62,7 +62,7 @@
         - kubeconfig_from_admin.stdout | length > 100
 
     - name: Establecer ruta del kubeconfig obtenido
-      set_fact:
+      ansible.builtin.set_fact:
         managed_cluster_kubeconfig_path: "/tmp/kubeconfig-{{ managed_cluster_name }}"
       when:
         - kubeconfig_from_admin.stdout is defined
@@ -70,16 +70,16 @@
         - kubeconfig_from_admin.stdout | length > 100
 
 - name: Determinar contexto y kubeconfig para comandos oc
-  set_fact:
+  ansible.builtin.set_fact:
     oc_context_arg: "{{ '--context=' + target_cluster_context if (target_cluster_context != '') else '' }}"
     managed_cluster_kubeconfig_path: "{{ managed_cluster_kubeconfig_path | default('') }}"
 
 - name: Configurar environment para oc (si hay kubeconfig del managed cluster)
-  set_fact:
+  ansible.builtin.set_fact:
     oc_environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path is defined and managed_cluster_kubeconfig_path != '') else {} }}"
 
 - name: Mostrar configuración de espera
-  debug:
+  ansible.builtin.debug:
     msg: |
       ========================================
       Configuración de Espera de Compliance
@@ -99,7 +99,7 @@
   when: wait_for_operator | bool
   block:
     - name: Verificar si el Compliance Operator ya está instalado
-      shell: |
+      ansible.builtin.shell: |
         oc {{ oc_context_arg }} get csv -n {{ compliance_namespace }} -o jsonpath='{.items[?(@.metadata.name=~"compliance-operator.*")].metadata.name}' 2>&1 | head -1 || \
         oc {{ oc_context_arg }} get csv -n openshift-operators -o jsonpath='{.items[?(@.metadata.name=~"compliance-operator.*")].metadata.name}' 2>&1 | head -1 || \
         oc {{ oc_context_arg }} get subscription -n {{ compliance_namespace }} -o jsonpath='{.items[?(@.spec.name=="compliance-operator")].metadata.name}' 2>&1 | head -1 || \
@@ -112,7 +112,7 @@
       when: target_cluster_context != ''
 
     - name: Verificar si el Compliance Operator ya está instalado (contexto actual)
-      shell: |
+      ansible.builtin.shell: |
         oc get csv -n {{ compliance_namespace }} -o jsonpath='{.items[?(@.metadata.name=~"compliance-operator.*")].metadata.name}' 2>&1 | head -1 || \
         oc get csv -n openshift-operators -o jsonpath='{.items[?(@.metadata.name=~"compliance-operator.*")].metadata.name}' 2>&1 | head -1 || \
         oc get subscription -n {{ compliance_namespace }} -o jsonpath='{.items[?(@.spec.name=="compliance-operator")].metadata.name}' 2>&1 | head -1 || \
@@ -124,13 +124,13 @@
       when: target_cluster_context == ''
 
     - name: Inicializar operator_check si no se ejecutó ninguna verificación
-      set_fact:
+      ansible.builtin.set_fact:
         operator_check:
           stdout: ""
       when: operator_check is not defined
 
     - name: Esperar instalación del Compliance Operator (loop con timeout)
-      shell: |
+      ansible.builtin.shell: |
         OPERATOR_FOUND=""
         for ns in {{ compliance_namespace }} openshift-operators; do
           CSV=$(oc {{ oc_context_arg }} get csv -n "$ns" -o jsonpath='{.items[?(@.metadata.name=~"compliance-operator.*")].metadata.name}' 2>&1 | head -1)
@@ -165,7 +165,7 @@
         - (operator_check.stdout | default('')) == ""
 
     - name: Esperar instalación del Compliance Operator (contexto actual, loop con timeout)
-      shell: |
+      ansible.builtin.shell: |
         OPERATOR_FOUND=""
         for ns in {{ compliance_namespace }} openshift-operators; do
           CSV=$(oc get csv -n "$ns" -o jsonpath='{.items[?(@.metadata.name=~"compliance-operator.*")].metadata.name}' 2>&1 | head -1)
@@ -200,11 +200,11 @@
         - operator_check.stdout == ""
 
     - name: Informar que el Compliance Operator está instalado
-      debug:
+      ansible.builtin.debug:
         msg: "Compliance Operator instalado y funcionando en el namespace {{ compliance_namespace }}. {{ 'Detalles: ' + operator_status.stdout if (operator_status is defined and operator_status.stdout is defined and operator_status.stdout != '') else 'Verificado correctamente.' }}"
 
     - name: Informar sobre escaneos periódicos
-      debug:
+      ansible.builtin.debug:
         msg: |
           Los escaneos de compliance se ejecutarán automáticamente según el schedule configurado en ScanSetting.
           No es necesario esperar manualmente a que completen, ya que se ejecutarán de forma periódica.
