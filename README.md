@@ -63,12 +63,34 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
 - **Execution Environment** personalizado (ver `ee-compliance/`)
 - **Repositorio GitOps** (opcional, solo si `do_gitops=true`)
 
-### Herramientas CLI
+### Execution Environment Personalizado
 
-- `oc` (OpenShift CLI)
-- `git`
-- `tar`, `bzip2` (para descompresión)
-- `zip` (para compresión)
+El Execution Environment debe incluir las siguientes dependencias:
+
+#### Colecciones de Ansible
+
+- `kubernetes.core` - Para operaciones con Kubernetes/OpenShift
+- `ansible.posix` - Para operaciones de sistema POSIX
+- `community.general` - Para módulos `mail` y `archive`
+
+#### Paquetes del Sistema
+
+- `openscap-scanner` - Para generar reportes HTML desde XML de compliance
+- `bzip2` - Para descomprimir archivos `.bzip2`
+- `zip` - Para comprimir reportes en formato ZIP
+- `unzip` - Para descomprimir archivos ZIP
+- `git` - Para operaciones GitOps
+- `gcc` - Compilador C (requerido para algunas dependencias Python)
+- `python3-devel` - Headers de desarrollo de Python
+- `libxml2-devel` - Headers de desarrollo de libxml2 (requerido para openscap)
+- `libxslt-devel` - Headers de desarrollo de libxslt (requerido para openscap)
+
+#### Herramientas CLI
+
+- `oc` (OpenShift CLI) - Para interactuar con clusters OpenShift
+- `tar` - Para operaciones de archivo
+
+**Nota**: Ver `ee-compliance/` para el Dockerfile y configuración completa del Execution Environment.
 
 ## Uso Rápido
 
@@ -119,6 +141,58 @@ ansible-playbook playbooks/orchestrator_aap_multicluster.yml \
   -e "email_from=compliance@empresa.com" \
   -e "email_subject_prefix=Reporte de compliance multicluster"
 ```
+
+## Diagrama de Flujo
+
+El siguiente diagrama muestra el flujo de ejecución del playbook `orchestrator_aap_multicluster.yml`:
+
+```mermaid
+flowchart TD
+    Start([Inicio del Playbook]) --> Normalize[Normalizar Credenciales<br/>desde Environment Variables]
+    Normalize --> Validate[Validar Variables<br/>Obligatorias]
+    Validate --> NormalizeData[Normalizar Lista<br/>de Clusters]
+    NormalizeData --> Debug[Mostrar Configuración<br/>Recibida]
+    
+    Debug --> CheckGitOps{do_gitops<br/>= true?}
+    CheckGitOps -->|Sí| GitOps[Fase GitOps<br/>- Clonar Repo<br/>- Actualizar Políticas<br/>- Commit & Push]
+    CheckGitOps -->|No| CheckExport
+    GitOps --> CheckExport{do_export_html<br/>= true?}
+    
+    CheckExport -->|Sí| LoopStart[Iniciar Bucle<br/>por Cluster]
+    CheckExport -->|No| CheckEmail
+    
+    LoopStart --> ForEach[Para cada Cluster:<br/>- Obtener Kubeconfig<br/>- Buscar PVCs<br/>- Extraer Reportes<br/>- Generar HTML<br/>- Comprimir en ZIP]
+    ForEach --> NextCluster{Hay más<br/>clusters?}
+    NextCluster -->|Sí| ForEach
+    NextCluster -->|No| CheckEmail
+    
+    CheckEmail{do_send_email<br/>= true?}
+    CheckEmail -->|Sí| FindZips[Buscar todos los ZIPs<br/>generados]
+    CheckEmail -->|No| Summary
+    FindZips --> BuildList[Construir Lista<br/>de Clusters Procesados]
+    BuildList --> NormalizeEmail[Normalizar Lista<br/>de Destinatarios]
+    NormalizeEmail --> SendEmail[Enviar Correo Consolidado<br/>con todos los ZIPs]
+    SendEmail --> VerifyEmail[Verificar Resultado<br/>del Envío]
+    VerifyEmail --> Summary
+    
+    Summary[Resumen Final<br/>de Ubicación de Reportes] --> End([Fin del Playbook])
+    
+    style Start fill:#90EE90
+    style End fill:#FFB6C1
+    style GitOps fill:#87CEEB
+    style ForEach fill:#DDA0DD
+    style SendEmail fill:#F0E68C
+```
+
+### Descripción de las Fases
+
+1. **Normalización de Credenciales**: Lee credenciales desde Environment Variables de AAP y las convierte en variables de Ansible
+2. **Validación**: Verifica que todas las variables requeridas estén presentes según los flags activados
+3. **Normalización de Datos**: Convierte la lista de clusters en formato estándar
+4. **Fase GitOps** (opcional): Actualiza políticas de compliance en el repositorio GitOps
+5. **Fase Extracción** (opcional): Por cada cluster, extrae reportes desde PVCs y genera HTML
+6. **Envío Consolidado** (opcional): Envía un solo correo con todos los reportes de todos los clusters
+7. **Resumen Final**: Muestra la ubicación de los reportes generados
 
 ## Características Principales
 
