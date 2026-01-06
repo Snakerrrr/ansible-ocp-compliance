@@ -53,7 +53,24 @@
       when: not do_gitops and not do_export_html
 
     # ---------------------------------------------------------
-    # 2. NORMALIZACIÓN DE DATOS (Sanitización)
+    # 2. NORMALIZACIÓN DE CREDENCIALES (Desde Environment Variables)
+    # ---------------------------------------------------------
+    # Las Environment Variables de AAP se inyectan como variables de entorno del SO
+    # Necesitamos hacer el "puente" para convertirlas en variables de Ansible
+    - name: Normalizar credenciales desde Environment Variables
+      ansible.builtin.set_fact:
+        # Credenciales SMTP desde Environment Variables (si están definidas)
+        email_smtp_password: "{{ lookup('env', 'EMAIL_SMTP_PASSWORD') | default(email_smtp_password | default('')) }}"
+        email_smtp_username: "{{ lookup('env', 'EMAIL_SMTP_USERNAME') | default(email_smtp_username | default('')) }}"
+        email_from: "{{ lookup('env', 'EMAIL_FROM') | default(email_from | default('')) }}"
+        email_to: "{{ lookup('env', 'EMAIL_TO') | default(email_to | default('')) }}"
+        # Credenciales GitHub desde Environment Variables (si están definidas)
+        github_token: "{{ lookup('env', 'GITHUB_TOKEN') | default(github_token | default('')) }}"
+        github_user: "{{ lookup('env', 'GITHUB_USER') | default(github_user | default('')) }}"
+      when: true  # Siempre ejecutar para normalizar
+
+    # ---------------------------------------------------------
+    # 3. NORMALIZACIÓN DE DATOS (Sanitización)
     # ---------------------------------------------------------
     - name: Normalizar lista de clusters desde AAP
       ansible.builtin.set_fact:
@@ -68,7 +85,7 @@
       when: survey_target_clusters is not defined
 
     # ---------------------------------------------------------
-    # 3. DEBUG INFORMATIVO (Para ver qué recibió el playbook)
+    # 4. DEBUG INFORMATIVO (Para ver qué recibió el playbook)
     # ---------------------------------------------------------
     - name: Mostrar configuración recibida (Sin secretos)
       ansible.builtin.debug:
@@ -86,7 +103,7 @@
           ====================================
 
     # ---------------------------------------------------------
-    # 4. FASE GITOPS (Se ejecuta UNA vez al inicio)
+    # 5. FASE GITOPS (Se ejecuta UNA vez al inicio)
     # ---------------------------------------------------------
     - name: Ejecutar Fase GitOps (Configuración Global)
       ansible.builtin.include_role:
@@ -111,7 +128,7 @@
       when: do_gitops | bool
 
     # ---------------------------------------------------------
-    # 5. FASE EXTRACCIÓN (Bucle por cada Cluster)
+    # 6. FASE EXTRACCIÓN (Bucle por cada Cluster)
     # ---------------------------------------------------------
     - name: "Procesando extracción para {{ item }}"
       ansible.builtin.include_role:
@@ -138,7 +155,7 @@
       ignore_errors: true
 
     # ---------------------------------------------------------
-    # 6. ENVÍO CONSOLIDADO DE CORREOS (Todos los clusters juntos)
+    # 7. ENVÍO CONSOLIDADO DE CORREOS (Todos los clusters juntos)
     # ---------------------------------------------------------
     - name: Buscar todos los ZIPs generados por cluster
       ansible.builtin.find:
@@ -240,7 +257,7 @@
         - email_result is defined
 
     # ---------------------------------------------------------
-    # 7. RESUMEN FINAL
+    # 8. RESUMEN FINAL
     # ---------------------------------------------------------
     - name: Resumen de ubicación de reportes
       ansible.builtin.debug:

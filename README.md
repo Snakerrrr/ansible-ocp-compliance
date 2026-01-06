@@ -163,6 +163,7 @@ El playbook `orchestrator_aap_multicluster.yml` procesa múltiples clusters en u
 - **[CONFIGURACION-PLACEMENT-MULTICLUSTER.md](guias-configuración/CONFIGURACION-PLACEMENT-MULTICLUSTER.md)**: Configuración de placement para multi-cluster
 - **[CONFIGURACION-SCAN-SETTING.md](guias-configuración/CONFIGURACION-SCAN-SETTING.md)**: Configuración de escaneos periódicos
 - **[EJEMPLO-EXTRA-VARIABLES-AAP.md](guias-configuración/EJEMPLO-EXTRA-VARIABLES-AAP.md)**: Ejemplos de variables extra para AAP
+- **[MIGRACION-CREDENCIALES-EXTRA-VARS.md](guias-configuración/MIGRACION-CREDENCIALES-EXTRA-VARS.md)**: Guía para migrar credenciales de Extra Vars a configuración segura
 
 ## Variables Principales
 
