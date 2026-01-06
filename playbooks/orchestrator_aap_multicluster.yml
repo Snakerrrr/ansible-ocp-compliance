@@ -19,7 +19,26 @@
 
   tasks:
     # ---------------------------------------------------------
-    # 1. VALIDACIÓN DE INPUTS (Semáforo de Seguridad)
+    # 1. NORMALIZACIÓN DE CREDENCIALES (Desde Environment Variables)
+    # ---------------------------------------------------------
+    # Las Environment Variables de AAP se inyectan como variables de entorno del SO
+    # Necesitamos hacer el "puente" para convertirlas en variables de Ansible
+    # IMPORTANTE: Esto debe ejecutarse ANTES de las validaciones para que las validaciones
+    # puedan verificar las variables normalizadas
+    - name: Normalizar credenciales desde Environment Variables
+      ansible.builtin.set_fact:
+        # Credenciales SMTP desde Environment Variables (si están definidas)
+        email_smtp_password: "{{ lookup('env', 'EMAIL_SMTP_PASSWORD') | default(email_smtp_password | default('')) }}"
+        email_smtp_username: "{{ lookup('env', 'EMAIL_SMTP_USERNAME') | default(email_smtp_username | default('')) }}"
+        email_from: "{{ lookup('env', 'EMAIL_FROM') | default(email_from | default('')) }}"
+        email_to: "{{ lookup('env', 'EMAIL_TO') | default(email_to | default('')) }}"
+        # Credenciales GitHub desde Environment Variables (si están definidas)
+        github_token: "{{ lookup('env', 'GITHUB_TOKEN') | default(github_token | default('')) }}"
+        github_user: "{{ lookup('env', 'GITHUB_USER') | default(github_user | default('')) }}"
+      when: true  # Siempre ejecutar para normalizar
+
+    # ---------------------------------------------------------
+    # 2. VALIDACIÓN DE INPUTS (Semáforo de Seguridad)
     # ---------------------------------------------------------
     - name: Validar variables obligatorias de infraestructura Git
       ansible.builtin.assert:
@@ -30,7 +49,7 @@
           - gitops_repo_branch | length > 0
           - github_token is defined
           - github_token | length > 0
-        fail_msg: "ERROR: Faltan variables de Git. Defínalas en AAP (Extra Vars, Survey o Credential de Source Control)."
+        fail_msg: "ERROR: Faltan variables de Git. Defínalas en AAP (Extra Vars, Survey, Environment Variables o Credential de Source Control)."
       when: do_gitops | bool
 
     - name: Validar variables obligatorias de correo
@@ -44,30 +63,13 @@
           - email_smtp_password | length > 0
           - email_to is defined
           - email_to | length > 0
-        fail_msg: "ERROR: Faltan variables de Correo. Defínalas en AAP (Extra Vars o Survey)."
+        fail_msg: "ERROR: Faltan variables de Correo. Defínalas en AAP (Extra Vars, Survey o Environment Variables)."
       when: do_send_email | bool
 
     - name: Validar flags de control
       ansible.builtin.fail:
         msg: "Al menos uno de los flags debe estar activado: do_gitops o do_export_html"
       when: not do_gitops and not do_export_html
-
-    # ---------------------------------------------------------
-    # 2. NORMALIZACIÓN DE CREDENCIALES (Desde Environment Variables)
-    # ---------------------------------------------------------
-    # Las Environment Variables de AAP se inyectan como variables de entorno del SO
-    # Necesitamos hacer el "puente" para convertirlas en variables de Ansible
-    - name: Normalizar credenciales desde Environment Variables
-      ansible.builtin.set_fact:
-        # Credenciales SMTP desde Environment Variables (si están definidas)
-        email_smtp_password: "{{ lookup('env', 'EMAIL_SMTP_PASSWORD') | default(email_smtp_password | default('')) }}"
-        email_smtp_username: "{{ lookup('env', 'EMAIL_SMTP_USERNAME') | default(email_smtp_username | default('')) }}"
-        email_from: "{{ lookup('env', 'EMAIL_FROM') | default(email_from | default('')) }}"
-        email_to: "{{ lookup('env', 'EMAIL_TO') | default(email_to | default('')) }}"
-        # Credenciales GitHub desde Environment Variables (si están definidas)
-        github_token: "{{ lookup('env', 'GITHUB_TOKEN') | default(github_token | default('')) }}"
-        github_user: "{{ lookup('env', 'GITHUB_USER') | default(github_user | default('')) }}"
-      when: true  # Siempre ejecutar para normalizar
 
     # ---------------------------------------------------------
     # 3. NORMALIZACIÓN DE DATOS (Sanitización)
