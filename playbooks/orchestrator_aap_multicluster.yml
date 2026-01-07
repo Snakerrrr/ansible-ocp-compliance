@@ -13,10 +13,7 @@
     do_gitops: false
     do_export_html: false
     do_send_email: false
-
-    # YA NO definimos github_user, github_token, email_smtp_host, etc. aquí.
-    # Ansible esperará que vengan de AAP (Extra Vars, Survey o Credentials).
-
+    
   tasks:
     # ---------------------------------------------------------
     # 1. VALIDACIÓN DE INPUTS (Semáforo de Seguridad)
