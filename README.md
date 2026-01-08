@@ -9,6 +9,7 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
 - **GitOps**: Configuración declarativa de políticas de compliance usando PolicyGenerator de ACM
 - **Compliance Operator**: Escaneos automáticos y periódicos de compliance (CIS, PCI-DSS)
 - **Exportación de Reportes**: Generación de reportes HTML desde los resultados de compliance
+  - Soporta estándares específicos: `ocp4-pci-dss-4-0`, `ocp4-pci-dss-node-4-0-*`, `ocp4-cis-1-7`, `ocp4-cis-node-1-7-*`
 - **Multi-cluster**: Soporte para ejecución en múltiples clusters gestionados desde un Hub
 - **Envío de Reportes**: Envío consolidado de reportes por correo electrónico (soporta múltiples destinatarios)
 - **100% Agnóstico**: Sin valores hardcodeados, todas las variables se inyectan desde AAP
@@ -223,6 +224,22 @@ El playbook `orchestrator_aap_multicluster.yml` procesa múltiples clusters en u
 - Todas las variables se inyectan desde AAP (Extra Vars, Survey, Credentials)
 - Fácil de adaptar a diferentes entornos
 
+### 📋 Estándares de Compliance Soportados
+
+El rol `compliance_export_html` procesa únicamente los siguientes estándares de compliance:
+
+#### Estándares PCI-DSS
+- **`ocp4-pci-dss-4-0`**: Estándar PCI-DSS 4.0 para plataforma
+- **`ocp4-pci-dss-node-4-0-*`**: Estándar PCI-DSS 4.0 para nodos (incluye variantes con sufijos como `-master`, `-worker`, etc.)
+
+#### Estándares CIS
+- **`ocp4-cis-1-7`**: Estándar CIS 1.7 para plataforma
+- **`ocp4-cis-node-1-7-*`**: Estándar CIS 1.7 para nodos (incluye variantes con sufijos como `-master`, `-worker`, etc.)
+
+**Nota**: El filtro utiliza coincidencias exactas para los estándares de plataforma y coincidencias por prefijo para los estándares de nodos, permitiendo capturar automáticamente todas las variantes con sufijos de nodos (ej: `ocp4-cis-node-1-7-master`, `ocp4-cis-node-1-7-worker`, `ocp4-pci-dss-node-4-0-master`, etc.).
+
+Los PVCs que no coincidan con estos estándares serán ignorados durante el procesamiento.
+
 ## Documentación
 
 ### Guías Principales
@@ -307,6 +324,16 @@ El playbook `orchestrator_aap_multicluster.yml` procesa múltiples clusters en u
 1. Verificar que el Compliance Operator esté instalado
 2. Verificar que se hayan ejecutado escaneos previamente
 3. Verificar que los PVCs existan en el namespace `openshift-compliance`
+4. **Verificar que los PVCs coincidan con los estándares soportados**: El playbook solo procesa PVCs que coincidan con los siguientes estándares:
+   - `ocp4-pci-dss-4-0`
+   - `ocp4-pci-dss-node-4-0-*` (ej: `ocp4-pci-dss-node-4-0-master`, `ocp4-pci-dss-node-4-0-worker`)
+   - `ocp4-cis-1-7`
+   - `ocp4-cis-node-1-7-*` (ej: `ocp4-cis-node-1-7-master`, `ocp4-cis-node-1-7-worker`)
+   
+   Si tus PVCs tienen nombres diferentes, no serán procesados. Verifica los nombres de tus PVCs con:
+   ```bash
+   oc get pvc -n openshift-compliance
+   ```
 
 Para más detalles, consultar la sección [Troubleshooting](guias-configuración/GUIA-APROVISIONAMIENTO-AAP.md#troubleshooting) en la guía de aprovisionamiento.
 
