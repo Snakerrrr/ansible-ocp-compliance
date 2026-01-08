@@ -14,6 +14,13 @@
     do_export_html: false
     do_send_email: false
     
+    # Default de perfiles de compliance (evita recursión)
+    _compliance_profiles_default:
+      - ocp4-pci-dss-node-4-0
+      - ocp4-pci-dss-node
+      - ocp4-cis-1-7
+      - ocp4-cis-node-1-7
+    
   tasks:
     # ---------------------------------------------------------
     # 1. NORMALIZACIÓN DE CREDENCIALES (Desde Environment Variables)
@@ -142,8 +149,8 @@
         # CRÍTICO: Deshabilitar envío de correo individual - se enviará al final todos juntos
         # Usamos una variable diferente para evitar conflictos de precedencia
         send_email_from_role: false
-        # Pasar lista de perfiles de compliance específicos
-        compliance_profiles: "{{ compliance_profiles | default([]) }}"
+        # Pasar lista de perfiles de compliance específicos (usar variable del playbook o default)
+        compliance_profiles: "{{ compliance_profiles | default(_compliance_profiles_default) }}"
       loop: "{{ target_clusters_list }}"
       loop_control:
         loop_var: item

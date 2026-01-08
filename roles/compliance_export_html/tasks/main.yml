@@ -395,7 +395,7 @@
   ansible.builtin.set_fact:
     # Si se especificaron perfiles específicos, buscar solo esos
     # Si no, usar filtros genéricos (compatibilidad hacia atrás)
-    _compliance_profiles: "{{ compliance_profiles | default([]) }}"
+    _compliance_profiles: "{{ compliance_profiles if compliance_profiles is defined else [] }}"
     _all_pvcs: "{{ pvc_list.stdout_lines | default([]) }}"
   
 - name: Filtrar PVCs por perfiles específicos (si están configurados)
