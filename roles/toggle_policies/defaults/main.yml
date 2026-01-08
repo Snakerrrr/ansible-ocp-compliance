@@ -1,4 +1,4 @@
-﻿---
+---
 # Defaults del rol toggle_policies
 
 # Rutas y Etiquetas
@@ -10,10 +10,8 @@ placement_label_value: "enabled"
 cis_disabled: false
 pci_disabled: true
 
-# --- CONFIGURACIÃ“N DE SCHEDULE (El fix que necesitas) ---
-# Antes fallaba por recursiÃ³n. Ahora ponemos el valor fijo.
+# --- CONFIGURACIÓN DE SCHEDULE (El fix que necesitas) ---
+# Antes fallaba por recursión. Ahora ponemos el valor fijo.
 scan_setting_name: "periodic-daily"   # <--- Valor solicitado
-scan_schedule: "0 1 * * *"            # <--- Valor estÃ¡ndar (1 AM)
-
-
+scan_schedule: "0 1 * * *"            # <--- Valor estándar (1 AM)
 

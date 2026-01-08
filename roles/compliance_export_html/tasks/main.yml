@@ -391,39 +391,19 @@
   changed_when: false
   environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (target_cluster_context != '' and managed_cluster_kubeconfig_path is defined and managed_cluster_kubeconfig_path != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else {} }}"
 
-- name: Preparar variables para filtrado de PVCs
+- name: Definir lista de PVCs permitidos
   ansible.builtin.set_fact:
-    # Si se especificaron perfiles específicos, buscar solo esos
-    # Si no, usar filtros genéricos (compatibilidad hacia atrás)
-    _compliance_profiles: "{{ compliance_profiles if compliance_profiles is defined else [] }}"
-    _all_pvcs: "{{ pvc_list.stdout_lines | default([]) }}"
-  
-- name: Filtrar PVCs por perfiles específicos (si están configurados)
-  ansible.builtin.set_fact:
-    filtered_pvcs: "{{ _filtered_pvcs }}"
-  vars:
-    # Construir regex que coincida con cualquiera de los perfiles especificados
-    # Formato: ^(perfil1|perfil2|perfil3).*
-    # Escapar caracteres especiales si es necesario
-    _profile_regex: "^({{ _compliance_profiles | join('|') }}).*"
-    _filtered_pvcs: "{{ _all_pvcs | select('match', _profile_regex) | list | default([]) }}"
-  when: 
-    - _compliance_profiles is defined
-    - _compliance_profiles | length > 0
+    allowed_pvc_names:
+      - ocp4-pci-dss-4-0
+      - ocp4-pci-dss-node-4-0
+      - ocp4-cis-1-7
+      - ocp4-cis-node-1-7
 
-- name: Filtrar PVCs genéricos (compatibilidad hacia atrás)
+- name: Filtrar PVCs CIS y PCI (solo estándares específicos)
   ansible.builtin.set_fact:
-    filtered_pvcs: "{{ _all_pvcs | select('match', '^(ocp4-cis|ocp4-pci-dss).*') | list }}"
-  when: _compliance_profiles | length == 0
-
-- name: Asegurar que filtered_pvcs está definida
-  ansible.builtin.set_fact:
-    filtered_pvcs: "{{ filtered_pvcs | default([]) }}"
-
-- name: Separar PVCs CIS y PCI
-  ansible.builtin.set_fact:
-    cis_pvcs: "{{ filtered_pvcs | select('match', '^ocp4-cis.*') | list }}"
-    pci_pvcs: "{{ filtered_pvcs | select('match', '^ocp4-pci-dss.*') | list }}"
+    filtered_pvcs: "{{ pvc_list.stdout_lines | intersect(allowed_pvc_names) | list }}"
+    cis_pvcs: "{{ filtered_pvcs | select('match', '^ocp4-cis') | list }}"
+    pci_pvcs: "{{ filtered_pvcs | select('match', '^ocp4-pci-dss') | list }}"
 
 - name: Mostrar PVCs encontrados
   ansible.builtin.debug:
@@ -431,8 +411,6 @@
       ========================================
       PVCs Encontrados en {{ managed_cluster_name if target_cluster_context != '' else 'HUB' }}
       ========================================
-      Perfiles configurados: {{ _compliance_profiles if _compliance_profiles | length > 0 else 'Genéricos (ocp4-cis.*, ocp4-pci-dss.*)' }}
-      PVCs filtrados: {{ filtered_pvcs | default([]) | length }}
       PVCs CIS: {{ cis_pvcs | length }} - {{ cis_pvcs if cis_pvcs | length > 0 else 'Ninguno' }}
       PVCs PCI: {{ pci_pvcs | length }} - {{ pci_pvcs if pci_pvcs | length > 0 else 'Ninguno' }}
       ========================================
