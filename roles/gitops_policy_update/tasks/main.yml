@@ -5,12 +5,12 @@
 # NO aplica manifests (eso lo hace ArgoCD/ACM)
 
 - name: Validar que github_token está definido
-  fail:
+  ansible.builtin.fail:
     msg: "github_token es requerido para operaciones GitOps"
   when: github_token is not defined or github_token == ""
 
 - name: Construir URL del repo GitOps
-  set_fact:
+  ansible.builtin.set_fact:
     gitops_repo_url: "https://{{ github_user }}:{{ github_token }}@github.com/{{ github_user }}/acm-policies.git"
 
 - name: Clonar/actualizar repo GitOps (acm-policies)
@@ -21,7 +21,7 @@
     force: true
 
 - name: Renderizar policy-generator-config.yaml vía toggle_policies
-  include_role:
+  ansible.builtin.include_role:
     name: toggle_policies
   vars:
     # Pasar variables directamente del playbook
@@ -39,47 +39,47 @@
     install_operator_remediation_action: "{{ install_operator_remediation_action | default('enforce') }}"
 
 - name: Verificar si hay cambios pendientes de commit
-  command: git status --porcelain
+  ansible.builtin.command: git status --porcelain
   args:
     chdir: "{{ gitops_repo_path }}"
   register: git_status
   changed_when: false
 
 - name: Mostrar estado de git
-  debug:
+  ansible.builtin.debug:
     msg: "Estado de git: {{ git_status.stdout if git_status.stdout != '' else 'Sin cambios' }}"
 
 - name: Mostrar información del último commit
-  command: git log -1 --oneline
+  ansible.builtin.command: git log -1 --oneline
   args:
     chdir: "{{ gitops_repo_path }}"
   register: last_commit
   changed_when: false
 
 - name: Mostrar último commit
-  debug:
+  ansible.builtin.debug:
     msg: "Último commit en repo: {{ last_commit.stdout }}"
 
 - name: Hacer commit y push si hay cambios
   when: git_status.stdout != ""
   block:
     - name: Configurar usuario Git para el commit
-      command: git config user.name "ansible-bot"
+      ansible.builtin.command: git config user.name "ansible-bot"
       args:
         chdir: "{{ gitops_repo_path }}"
 
     - name: Configurar email Git para el commit
-      command: git config user.email "ansible-bot@example.com"
+      ansible.builtin.command: git config user.email "ansible-bot@example.com"
       args:
         chdir: "{{ gitops_repo_path }}"
 
     - name: Agregar todos los cambios al staging
-      command: git add -A
+      ansible.builtin.command: git add -A
       args:
         chdir: "{{ gitops_repo_path }}"
 
     - name: Hacer commit
-      command: >
+      ansible.builtin.command: >
         git commit -m
         "Compliance GitOps update (CIS={{ run_cis | default(true) | bool }},
          PCI={{ run_pci | default(false) | bool }},
@@ -88,17 +88,17 @@
         chdir: "{{ gitops_repo_path }}"
 
     - name: Hacer push (sin prompts)
-      command: git push origin "{{ gitops_repo_branch }}"
+      ansible.builtin.command: git push origin "{{ gitops_repo_branch }}"
       args:
         chdir: "{{ gitops_repo_path }}"
       environment:
         GIT_TERMINAL_PROMPT: "0"
 
     - name: Mostrar mensaje de éxito
-      debug:
+      ansible.builtin.debug:
         msg: "Cambios GitOps aplicados exitosamente. ArgoCD sincronizará automáticamente."
 
 - name: Informar si no hay cambios
   when: git_status.stdout == ""
-  debug:
+  ansible.builtin.debug:
     msg: "No hay cambios en el repo GitOps. Nada que commitear."

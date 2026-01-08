@@ -5,11 +5,11 @@
 #   pvc_type: "cis" o "pci"
 
 - name: Definir nombre del pod extractor
-  set_fact:
+  ansible.builtin.set_fact:
     pod_name: "extract-{{ pvc_name | regex_replace('^ocp4-(cis|pci-dss)-', '') | regex_replace('[^a-z0-9-]', '-') | lower }}"
 
 - name: Crear pod extractor temporal
-  template:
+  ansible.builtin.template:
     src: extract-pod.yaml.j2
     dest: "/tmp/extract-{{ pvc_name }}.yaml"
   vars:
@@ -17,24 +17,24 @@
     pod_name: "{{ pod_name }}"
 
 - name: Aplicar pod extractor
-  command: oc apply -f /tmp/extract-{{ pvc_name }}.yaml -n openshift-compliance {{ oc_context_arg | default('') }}
+  ansible.builtin.command: oc apply -f /tmp/extract-{{ pvc_name }}.yaml -n openshift-compliance {{ oc_context_arg | default('') }}
   register: pod_apply
   environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path is defined and managed_cluster_kubeconfig_path | default('') != '') else {} }}"
 
 - name: Esperar a que el pod esté Running
-  command: oc wait --for=condition=Ready pod/{{ pod_name }} -n openshift-compliance {{ oc_context_arg | default('') }} --timeout=60s
+  ansible.builtin.command: oc wait --for=condition=Ready pod/{{ pod_name }} -n openshift-compliance {{ oc_context_arg | default('') }} --timeout=60s
   ignore_errors: true
   environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
 
 - name: Crear directorio de destino en el bastión
-  file:
+  ansible.builtin.file:
     path: "{{ compliance_reports_path }}/{{ pvc_name }}"
     state: directory
     mode: '0755'
 
 # --- EXTRACCIÓN ROBUSTA (Múltiples métodos de respaldo) ---
 - name: Extraer resultados del PVC (Metodo 1 - oc cp - Mas estable)
-  shell: |
+  ansible.builtin.shell: |
     # Asegurar directorio local
     mkdir -p "{{ compliance_reports_path }}/{{ pvc_name }}"
     
@@ -48,7 +48,7 @@
   environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
 
 - name: Extraer resultados del PVC (Metodo 2 - tar pipe - Fallback)
-  shell: |
+  ansible.builtin.shell: |
     oc exec -n openshift-compliance {{ pod_name }} -c extractor {{ oc_context_arg | default('') }} -- tar czf - -C /results . | tar xzf - -C {{ compliance_reports_path }}/{{ pvc_name }}
   args:
     executable: /bin/bash
@@ -58,12 +58,12 @@
   when: copy_result_oc_cp.rc != 0
 
 - name: Verificar que la copia fue exitosa
-  stat:
+  ansible.builtin.stat:
     path: "{{ compliance_reports_path }}/{{ pvc_name }}"
   register: copied_dir
 
 - name: Mostrar resultado de la copia
-  debug:
+  ansible.builtin.debug:
     msg: |
       {{ 'Copiado exitosamente' if (copied_dir.stat.exists and copied_dir.stat.isdir) else 'Error al copiar - directorio no encontrado' }}
       
@@ -72,12 +72,12 @@
       - tar pipe: {{ 'Exitoso' if (copy_result_tar.rc | default(999) == 0) else 'Falló' if copy_result_tar is defined else 'No intentado' }}
 
 - name: Eliminar pod extractor
-  command: oc delete pod {{ pod_name }} -n openshift-compliance {{ oc_context_arg | default('') }} --ignore-not-found=true
+  ansible.builtin.command: oc delete pod {{ pod_name }} -n openshift-compliance {{ oc_context_arg | default('') }} --ignore-not-found=true
   ignore_errors: true
   environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
 
 - name: Limpiar archivo temporal
-  file:
+  ansible.builtin.file:
     path: "/tmp/extract-{{ pvc_name }}.yaml"
     state: absent
 
