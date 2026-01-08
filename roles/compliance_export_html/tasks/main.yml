@@ -399,9 +399,12 @@
       - ocp4-cis-1-7
       - ocp4-cis-node-1-7
 
-- name: Filtrar PVCs CIS y PCI (solo estándares específicos)
+- name: Filtrar PVCs permitidos (solo estándares específicos)
   ansible.builtin.set_fact:
     filtered_pvcs: "{{ pvc_list.stdout_lines | intersect(allowed_pvc_names) | list }}"
+
+- name: Separar PVCs CIS y PCI
+  ansible.builtin.set_fact:
     cis_pvcs: "{{ filtered_pvcs | select('match', '^ocp4-cis') | list }}"
     pci_pvcs: "{{ filtered_pvcs | select('match', '^ocp4-pci-dss') | list }}"
 
