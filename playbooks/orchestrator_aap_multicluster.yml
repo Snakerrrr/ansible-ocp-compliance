@@ -191,9 +191,9 @@
         subject: "{{ email_subject_prefix }} - Reportes Multi-Cluster ({{ clusters_with_reports | default([]) | length }} clusters)"
         timeout: "{{ email_smtp_timeout | default(60) }}"
         body: |
-          Hola,
+          Estimados,
           
-          Se adjuntan los reportes de cumplimiento consolidados de todos los clusters procesados.
+          Se adjuntan los reportes de cumplimiento del estándar PCI DSS y CIS consolidados.
           
           RESUMEN DE PROCESAMIENTO
           ==========================
@@ -213,7 +213,7 @@
           {% endfor %}
           {% endfor %}
           {% else %}
-          ⚠️  No se encontraron reportes generados.
+          No se encontraron reportes generados.
           {% endif %}
           
           📄 CONTENIDO DE CADA ZIP
@@ -227,7 +227,6 @@
           Verifica el % de cumplimiento de los estándares en los archivos adjuntos, con base a esa revisión, aplica las remediaciones.
           
           Saludos,
-          Equipo de Automatización.
         attach: "{{ all_zip_files.files | map(attribute='path') | list }}"
         secure: starttls
       delegate_to: localhost
