@@ -403,19 +403,27 @@
     filtered_pvcs: "{{ _filtered_pvcs }}"
   vars:
     # Construir regex que coincida con cualquiera de los perfiles especificados
-    _profile_regex: "^{{ _compliance_profiles | join('|^') }}.*"
-    _filtered_pvcs: "{{ _all_pvcs | select('match', _profile_regex) | list }}"
-  when: _compliance_profiles | length > 0
+    # Formato: ^(perfil1|perfil2|perfil3).*
+    # Escapar caracteres especiales si es necesario
+    _profile_regex: "^({{ _compliance_profiles | join('|') }}).*"
+    _filtered_pvcs: "{{ _all_pvcs | select('match', _profile_regex) | list | default([]) }}"
+  when: 
+    - _compliance_profiles is defined
+    - _compliance_profiles | length > 0
 
 - name: Filtrar PVCs genéricos (compatibilidad hacia atrás)
   ansible.builtin.set_fact:
     filtered_pvcs: "{{ _all_pvcs | select('match', '^(ocp4-cis|ocp4-pci-dss).*') | list }}"
   when: _compliance_profiles | length == 0
 
+- name: Asegurar que filtered_pvcs está definida
+  ansible.builtin.set_fact:
+    filtered_pvcs: "{{ filtered_pvcs | default([]) }}"
+
 - name: Separar PVCs CIS y PCI
   ansible.builtin.set_fact:
-    cis_pvcs: "{{ filtered_pvcs | default([]) | select('match', '^ocp4-cis.*') | list }}"
-    pci_pvcs: "{{ filtered_pvcs | default([]) | select('match', '^ocp4-pci-dss.*') | list }}"
+    cis_pvcs: "{{ filtered_pvcs | select('match', '^ocp4-cis.*') | list }}"
+    pci_pvcs: "{{ filtered_pvcs | select('match', '^ocp4-pci-dss.*') | list }}"
 
 - name: Mostrar PVCs encontrados
   ansible.builtin.debug:
