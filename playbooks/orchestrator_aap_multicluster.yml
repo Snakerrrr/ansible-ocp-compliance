@@ -124,6 +124,7 @@
         placement_use_matchlabels: "{{ placement_use_matchlabels | default(true) | bool }}"
         scan_schedule: "{{ scan_schedule | default('0 2 * * *') }}"
         scan_setting_name: "{{ scan_setting_name | default('periodic-daily') }}"
+        compliance_profiles: "{{ compliance_profiles | default([]) }}"
       when: do_gitops | bool
 
     # ---------------------------------------------------------
@@ -141,6 +142,8 @@
         # CRÍTICO: Deshabilitar envío de correo individual - se enviará al final todos juntos
         # Usamos una variable diferente para evitar conflictos de precedencia
         send_email_from_role: false
+        # Pasar lista de perfiles de compliance específicos
+        compliance_profiles: "{{ compliance_profiles | default([]) }}"
       loop: "{{ target_clusters_list }}"
       loop_control:
         loop_var: item
