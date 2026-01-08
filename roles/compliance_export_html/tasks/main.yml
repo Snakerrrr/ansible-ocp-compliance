@@ -391,17 +391,9 @@
   changed_when: false
   environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (target_cluster_context != '' and managed_cluster_kubeconfig_path is defined and managed_cluster_kubeconfig_path != '' and ((kubeconfig_source in ['acm_native', 'custom']) or (kubeconfig_exists.stat.exists))) else {} }}"
 
-- name: Definir lista de PVCs permitidos
+- name: Filtrar PVCs permitidos (solo estándares específicos con soporte para sufijos de nodos)
   ansible.builtin.set_fact:
-    allowed_pvc_names:
-      - ocp4-pci-dss-4-0
-      - ocp4-pci-dss-node-4-0
-      - ocp4-cis-1-7
-      - ocp4-cis-node-1-7
-
-- name: Filtrar PVCs permitidos (solo estándares específicos)
-  ansible.builtin.set_fact:
-    filtered_pvcs: "{{ pvc_list.stdout_lines | intersect(allowed_pvc_names) | list }}"
+    filtered_pvcs: "{{ pvc_list.stdout_lines | select('match', '^(ocp4-pci-dss-4-0$|ocp4-pci-dss-node-4-0-|ocp4-cis-1-7$|ocp4-cis-node-1-7-)') | list }}"
 
 - name: Separar PVCs CIS y PCI
   ansible.builtin.set_fact:
