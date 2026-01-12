@@ -30,14 +30,6 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
 │   ├── execution-environment.yml   # Configuración del EE
 │   ├── requirements.yml            # Dependencias de Ansible
 │   └── context/Dockerfile          # Dockerfile del EE
-├── guias-configuración/           # Documentación de configuración
-│   ├── GUIA-APROVISIONAMIENTO-AAP.md      # Guía completa de aprovisionamiento en AAP
-│   ├── GUIA-CONFIGURACION-COMPLETA-AAP.md  # Guía detallada de configuración
-│   ├── CONFIGURACION-EMAIL-AAP.md          # Configuración de correo electrónico
-│   ├── CONFIGURACION-GITHUB-TOKEN-AAP.md   # Configuración de token GitHub
-│   ├── CONFIGURACION-PLACEMENT-MULTICLUSTER.md  # Configuración de placement
-│   ├── CONFIGURACION-SCAN-SETTING.md       # Configuración de escaneos periódicos
-│   └── EJEMPLO-EXTRA-VARIABLES-AAP.md      # Ejemplos de variables extra
 ├── inventories/                   # Inventarios de Ansible
 │   └── localhost.yml
 └── ansible.cfg                     # Configuración de Ansible
@@ -97,7 +89,7 @@ El Execution Environment debe incluir las siguientes dependencias:
 
 ### Ejecución desde Ansible Automation Platform (AAP)
 
-**Recomendado para producción**. Ver guía completa: [`guias-configuración/GUIA-APROVISIONAMIENTO-AAP.md`](guias-configuración/GUIA-APROVISIONAMIENTO-AAP.md)
+**Recomendado para producción**. 
 
 1. Configurar Execution Environment
 2. Crear credenciales (GitHub, SMTP)
@@ -240,22 +232,6 @@ El rol `compliance_export_html` procesa únicamente los siguientes estándares d
 
 Los PVCs que no coincidan con estos estándares serán ignorados durante el procesamiento.
 
-## Documentación
-
-### Guías Principales
-
-- **[GUIA-APROVISIONAMIENTO-AAP.md](guias-configuración/GUIA-APROVISIONAMIENTO-AAP.md)**: Guía completa paso a paso para aprovisionar el playbook en AAP desde cero
-- **[GUIA-CONFIGURACION-COMPLETA-AAP.md](guias-configuración/GUIA-CONFIGURACION-COMPLETA-AAP.md)**: Guía detallada de configuración de AAP
-
-### Guías Específicas
-
-- **[CONFIGURACION-EMAIL-AAP.md](guias-configuración/CONFIGURACION-EMAIL-AAP.md)**: Configuración de envío de correo electrónico
-- **[CONFIGURACION-GITHUB-TOKEN-AAP.md](guias-configuración/CONFIGURACION-GITHUB-TOKEN-AAP.md)**: Configuración de token GitHub
-- **[CONFIGURACION-PLACEMENT-MULTICLUSTER.md](guias-configuración/CONFIGURACION-PLACEMENT-MULTICLUSTER.md)**: Configuración de placement para multi-cluster
-- **[CONFIGURACION-SCAN-SETTING.md](guias-configuración/CONFIGURACION-SCAN-SETTING.md)**: Configuración de escaneos periódicos
-- **[EJEMPLO-EXTRA-VARIABLES-AAP.md](guias-configuración/EJEMPLO-EXTRA-VARIABLES-AAP.md)**: Ejemplos de variables extra para AAP
-- **[MIGRACION-CREDENCIALES-EXTRA-VARS.md](guias-configuración/MIGRACION-CREDENCIALES-EXTRA-VARS.md)**: Guía para migrar credenciales de Extra Vars a configuración segura
-
 ## Variables Principales
 
 ### Flags de Control
@@ -334,9 +310,3 @@ Los PVCs que no coincidan con estos estándares serán ignorados durante el proc
    ```bash
    oc get pvc -n openshift-compliance
    ```
-
-Para más detalles, consultar la sección [Troubleshooting](guias-configuración/GUIA-APROVISIONAMIENTO-AAP.md#troubleshooting) en la guía de aprovisionamiento.
-
-## Licencia
-
-Apache License 2.0
