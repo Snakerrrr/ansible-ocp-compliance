@@ -18,21 +18,56 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
 
 ```
 .
-├── playbooks/                      # Playbooks principales
-│   ├── compliance-pipeline.yml              # Playbook principal del pipeline (single cluster)
+├── playbooks/                              # Playbooks principales
 │   └── orchestrator_aap_multicluster.yml   # Orquestador multi-cluster para ejecución en AAP
-├── roles/                          # Roles de Ansible
-│   ├── gitops_policy_update        # Actualización de políticas GitOps
-│   ├── toggle_policies             # Generación de configuraciones (PolicyGenerator, ScanSetting)
-│   ├── compliance_wait             # Espera de instalación del Compliance Operator
-│   └── compliance_export_html       # Exportación de reportes HTML desde PVCs
-├── ee-compliance/                  # Execution Environment personalizado
-│   ├── execution-environment.yml   # Configuración del EE
-│   ├── requirements.yml            # Dependencias de Ansible
-│   └── context/Dockerfile          # Dockerfile del EE
-├── inventories/                   # Inventarios de Ansible
-│   └── localhost.yml
-└── ansible.cfg                     # Configuración de Ansible
+├── roles/                                  # Roles de Ansible
+│   ├── gitops_policy_update/               # Actualización de políticas GitOps
+│   │   ├── defaults/
+│   │   │   └── main.yml                    # Variables por defecto del rol
+│   │   └── tasks/
+│   │       └── main.yml                    # Tareas de actualización GitOps
+│   ├── toggle_policies/                    # Generación de configuraciones (PolicyGenerator, ScanSetting)
+│   │   ├── defaults/
+│   │   │   └── main.yml                    # Variables por defecto del rol
+│   │   ├── tasks/
+│   │   │   └── main.yml                    # Tareas de generación de políticas
+│   │   └── templates/
+│   │       ├── policy-generator-config.yaml.j2  # Template de PolicyGenerator
+│   │       └── scan-setting.yaml.j2            # Template de ScanSetting
+│   ├── compliance_wait/                    # Espera de instalación del Compliance Operator
+│   │   └── tasks/
+│   │       └── main.yml                    # Tareas de espera
+│   └── compliance_export_html/             # Exportación de reportes HTML desde PVCs
+│       ├── defaults/
+│       │   └── main.yml                    # Variables por defecto del rol
+│       ├── tasks/
+│       │   ├── main.yml                    # Tareas principales de exportación
+│       │   └── process_pvc.yml            # Procesamiento de PVCs
+│       └── templates/
+│           ├── extract-kubeconfig.sh.j2   # Script para extraer kubeconfig
+│           ├── extract-pod.yaml.j2        # Template de Pod para extracción
+│           ├── render_reports.sh.j2       # Script para renderizar reportes HTML
+│           └── summary.txt.j2             # Template de resumen
+├── ee-compliance/                          # Execution Environment personalizado
+│   ├── execution-environment.yml          # Configuración del EE
+│   ├── requirements.yml                   # Dependencias de Ansible (colecciones)
+│   ├── bindep.txt                        # Dependencias del sistema (bindep)
+│   └── context/                          # Contexto para construir el EE
+│       ├── Dockerfile                    # Dockerfile del EE
+│       └── _build/                       # Archivos de construcción
+│           ├── bindep.txt                # Bindep para construcción
+│           ├── requirements.yml          # Requirements para construcción
+│           └── scripts/                 # Scripts de construcción
+│               ├── assemble              # Script de ensamblado
+│               ├── check_ansible         # Verificación de Ansible
+│               ├── check_galaxy          # Verificación de Galaxy
+│               ├── entrypoint            # Punto de entrada
+│               ├── install-from-bindep   # Instalación desde bindep
+│               ├── introspect.py         # Script de introspección
+│               └── pip_install          # Instalación de pip
+├── inventories/                           # Inventarios de Ansible
+│   └── localhost.yml                     # Inventario localhost
+└── ansible.cfg                            # Configuración de Ansible
 ```
 
 ## Requisitos
