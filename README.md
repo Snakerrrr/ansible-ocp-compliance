@@ -189,7 +189,7 @@ flowchart TD
 
 ## Características Principales
 
-### 🎯 Multi-Cluster Support
+### Multi-Cluster Support
 
 El playbook `orchestrator_aap_multicluster.yml` procesa múltiples clusters en una sola ejecución:
 
@@ -197,26 +197,26 @@ El playbook `orchestrator_aap_multicluster.yml` procesa múltiples clusters en u
 - Genera reportes individuales por cluster
 - Envía un correo consolidado con todos los reportes al final
 
-### 📧 Envío Consolidado de Correos
+### Envío Consolidado de Correos
 
 - **Un solo correo** con todos los reportes de todos los clusters procesados
 - Soporta **múltiples destinatarios** (separados por comas)
 - Archivos comprimidos en ZIP para reducir tamaño
 - Timeout configurable para archivos grandes (`email_smtp_timeout`)
 
-### 🔒 Seguridad
+### Seguridad
 
 - **Sin valores hardcodeados**: Todas las variables sensibles se inyectan desde AAP
 - **Validación de inputs**: El playbook valida que todas las variables requeridas estén presentes
 - **Credenciales seguras**: Soporte para Source Control Credentials y Environment Variables en AAP
 
-### 🚀 100% Agnóstico
+### 100% Agnóstico
 
 - No contiene valores hardcodeados de usuarios, tokens o contraseñas
 - Todas las variables se inyectan desde AAP (Extra Vars, Survey, Credentials)
 - Fácil de adaptar a diferentes entornos
 
-### 📋 Estándares de Compliance Soportados
+### Estándares de Compliance Soportados
 
 El rol `compliance_export_html` procesa únicamente los siguientes estándares de compliance:
 
