@@ -16,6 +16,34 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
 - **Multi-cluster**: Soporte para ejecución en múltiples clusters gestionados desde un Hub
 - **Envío de Reportes**: Envío consolidado de reportes por correo electrónico (soporta múltiples destinatarios)
 - **100% Agnóstico**: Sin valores hardcodeados, todas las variables se inyectan desde AAP
+- **Mejores Prácticas**: Todos los módulos de Ansible utilizan FQDN (Fully Qualified Domain Names) para mayor claridad y compatibilidad
+
+## Mejoras Recientes
+
+### Soporte de Environment Variables desde AAP Credentials
+
+Los playbooks `inform.yaml` y `enforce.yaml` ahora soportan la inyección automática de credenciales SMTP desde **Environment Variables** configuradas en Ansible Automation Platform (AAP).
+
+Cuando se utiliza un **Credential Type** en AAP que inyecta variables de entorno (por ejemplo, `EMAIL_SMTP_PASSWORD`), los roles `controles-seguridad-inform` y `controles-seguridad-enforce` normalizan automáticamente estas variables antes de usarlas.
+
+**Ejemplo de Credential Type en AAP:**
+- **Input configuration**: Define `smtp_password` como campo secreto
+- **Injector configuration**: Inyecta `EMAIL_SMTP_PASSWORD` como variable de entorno
+
+Los roles detectan automáticamente la variable de entorno `EMAIL_SMTP_PASSWORD` y la mapean a `email_smtp_password` para su uso interno.
+
+### Actualización de Módulos con FQDN
+
+Todos los módulos de Ansible en los playbooks `inform.yaml` y `enforce.yaml`, así como en los roles `controles-seguridad-inform` y `controles-seguridad-enforce`, ahora utilizan **Fully Qualified Domain Names (FQDN)**:
+
+- `file` → `ansible.builtin.file`
+- `template` → `ansible.builtin.template`
+- `set_fact` → `ansible.builtin.set_fact`
+- `include_tasks` → `ansible.builtin.include_tasks`
+- `pause` → `ansible.builtin.pause`
+- `mail` → `community.general.mail`
+
+Esto mejora la claridad del código, evita conflictos de nombres y sigue las mejores prácticas recomendadas por Ansible.
 
 ## Estructura del Proyecto
 
@@ -350,6 +378,12 @@ El playbook `orchestrator_aap_multicluster.yml` procesa múltiples clusters en u
 - **Sin valores hardcodeados**: Todas las variables sensibles se inyectan desde AAP
 - **Validación de inputs**: El playbook valida que todas las variables requeridas estén presentes
 - **Credenciales seguras**: Soporte para Source Control Credentials y Environment Variables en AAP
+- **Soporte de Environment Variables**: Los playbooks `inform.yaml` y `enforce.yaml` normalizan automáticamente las credenciales SMTP desde Environment Variables inyectadas por Credential Types de AAP
+
+### Calidad de Código
+
+- **FQDN en módulos**: Todos los módulos de Ansible utilizan Fully Qualified Domain Names (FQDN) para mayor claridad y evitar conflictos de nombres
+- **Mejores prácticas**: El código sigue las recomendaciones oficiales de Ansible para mantenibilidad y compatibilidad
 
 ### 100% Agnóstico
 
@@ -475,6 +509,8 @@ Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`
 | `email_subject_prefix` | string | Prefijo del asunto | - |
 | `email_smtp_timeout` | integer | Timeout SMTP en segundos | `60` |
 
+**Nota sobre Credenciales SMTP en AAP**: Los playbooks `inform.yaml` y `enforce.yaml` soportan la inyección automática de credenciales SMTP desde **Environment Variables** de AAP. Si utilizas un Credential Type que inyecta `EMAIL_SMTP_PASSWORD` como variable de entorno, el rol la normalizará automáticamente. También puedes pasar `email_smtp_password` directamente como variable de Ansible.
+
 ### Variables de Multi-Cluster
 
 | Variable | Tipo | Descripción | Default |
@@ -489,10 +525,12 @@ Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`
 | `send_mail` | boolean | Activar envío de reporte por correo | `true` |
 | `mail_to` | string | Destinatario del correo | - |
 | `mail_from` | string | Remitente del correo | - |
-| `mail_password` | string | Contraseña SMTP (🔒 Credential) | - |
+| `email_smtp_password` | string | Contraseña SMTP (🔒 Credential) | - |
 | `smtp_host` | string | Servidor SMTP | - |
 | `report_dir` | string | Directorio para guardar reportes | `/tmp/ocp-reports` |
 | `system_ns_regex` | string | Expresión regular para filtrar namespaces del sistema en network policies | `^(openshift.*\|kube.*\|default\|stackrox)$` |
+
+**Nota**: El rol `controles-seguridad-inform` soporta la inyección automática de `EMAIL_SMTP_PASSWORD` desde Environment Variables de AAP. Si utilizas un Credential Type que inyecta esta variable de entorno, el rol la normalizará automáticamente a `email_smtp_password`.
 
 ### Variables de Controles de Seguridad - Enforce
 
@@ -504,9 +542,11 @@ Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`
 | `send_mail` | boolean | Activar envío de reporte por correo | `true` |
 | `mail_to` | string | Destinatario del correo | - |
 | `mail_from` | string | Remitente del correo | - |
-| `mail_password` | string | Contraseña SMTP (🔒 Credential) | - |
+| `email_smtp_password` | string | Contraseña SMTP (🔒 Credential) | - |
 | `smtp_host` | string | Servidor SMTP | - |
 | `report_dir` | string | Directorio para guardar reportes | `/tmp/ocp-reports` |
+
+**Nota**: El rol `controles-seguridad-enforce` soporta la inyección automática de `EMAIL_SMTP_PASSWORD` desde Environment Variables de AAP. Si utilizas un Credential Type que inyecta esta variable de entorno, el rol la normalizará automáticamente a `email_smtp_password`.
 
 **🔒 SEGURIDAD**: Las variables marcadas con 🔒 deben configurarse como **Credentials** o **Environment Variables** en AAP (nunca en texto plano).
 
@@ -519,6 +559,20 @@ Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`
 ### Error: "Faltan variables de Correo"
 
 **Solución**: Verificar que todas las variables de correo estén definidas cuando `do_send_email=true`.
+
+### Error: "'email_smtp_password' is undefined" en playbooks inform.yaml o enforce.yaml
+
+**Síntoma**: El playbook falla con el error `'email_smtp_password' is undefined` al intentar enviar correos.
+
+**Solución**: 
+1. Si estás usando un **Credential Type** en AAP que inyecta `EMAIL_SMTP_PASSWORD` como variable de entorno, asegúrate de que el Credential Type esté correctamente configurado:
+   - **Input configuration**: Define un campo secreto (ej: `smtp_password`)
+   - **Injector configuration**: Inyecta `EMAIL_SMTP_PASSWORD` como variable de entorno
+2. El rol normaliza automáticamente `EMAIL_SMTP_PASSWORD` a `email_smtp_password`, pero si prefieres pasar la variable directamente, puedes usar:
+   ```bash
+   ansible-playbook playbooks/inform.yaml -e "email_smtp_password=tu_contraseña"
+   ```
+3. Verifica que el Credential esté asociado al Job Template en AAP.
 
 ### Timeout al enviar correo (pero el correo se envía)
 
