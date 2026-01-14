@@ -18,7 +18,7 @@
   when: ns_stackrox.resources | length > 0
   
 - name: Evaluar cumplimiento de la política
-  set_fact:
+  ansible.builtin.set_fact:
     acs_status: >-
       {% if ns_stackrox.resources | length == 0 %}
       Namespace stackrox no existe

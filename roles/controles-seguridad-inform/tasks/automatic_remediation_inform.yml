@@ -6,7 +6,7 @@
   register: rem_res
 
 - name: "[REMEDY-INFORM] Formatear reporte de remediaciones detectadas"
-  set_fact:
+  ansible.builtin.set_fact:
     remedy_resultado: |-
       TOTAL REMEDIACIONES DETECTADAS: {{ rem_res.resources | length }}
 

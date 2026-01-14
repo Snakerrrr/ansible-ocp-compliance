@@ -1,8 +1,8 @@
 ---
 - name: "[REPORT] Crear directorio y Guardar TXT"
   block:
-    - file: { path: "{{ report_dir }}", state: directory }
-    - template:
+    - ansible.builtin.file: { path: "{{ report_dir }}", state: directory }
+    - ansible.builtin.template:
         src: report_final.j2
         dest: "{{ report_dir }}/{{ report_file }}.txt"
 

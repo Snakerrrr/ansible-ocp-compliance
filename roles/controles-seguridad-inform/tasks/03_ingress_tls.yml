@@ -8,7 +8,7 @@
   register: ingress_info
 
 - name: "[INGRESS] Definir texto resultado"
-  set_fact:
+  ansible.builtin.set_fact:
     ingress_tls_resultado: |-
       {% set ciphers = ingress_info.resources[0].status.tlsProfile.ciphers | default([]) if ingress_info.resources | length > 0 else [] %}
       {% if ciphers | length == 0 %}No se encuentran ciphers TLS configurados en ingresscontrollers/default

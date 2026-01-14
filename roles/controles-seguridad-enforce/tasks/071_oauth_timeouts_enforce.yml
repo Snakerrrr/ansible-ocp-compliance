@@ -9,7 +9,7 @@
   register: oauth_res
 
 - name: "[OAUTH-ENFORCE] Procesar filtro de clientes"
-  set_fact:
+  ansible.builtin.set_fact:
     enforce_target_list: >-
       {{ 
         oauth_client.replace('\n', ',').split(',') 
@@ -44,7 +44,7 @@
       register: client_patch_res
 
     - name: "[OAUTH-ENFORCE] Generar resumen con respaldo"
-      set_fact:
+      ansible.builtin.set_fact:
         oauth_enforce_resultado: |-
           ACCIONES REALIZADAS (ENFORCE - OAUTH):
           ---------------------------------------------

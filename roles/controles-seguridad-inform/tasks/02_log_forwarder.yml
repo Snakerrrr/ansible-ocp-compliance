@@ -6,15 +6,15 @@
   register: clf_info
 
 - name: "[LOGS] Procesar resultado"
-  set_fact:
+  ansible.builtin.set_fact:
     clf_exists: "{{ clf_info.resources | length > 0 }}"
 
 - name: "[LOGS] Validar Auditoría"
-  set_fact:
+  ansible.builtin.set_fact:
     audit_configured: "{{ clf_info.resources[0].spec.inputs | default([]) | selectattr('type', 'equalto', 'audit') | list | length > 0 if clf_exists else false }}"
 
 - name: "[LOGS] Definir texto resultado"
-  set_fact:
+  ansible.builtin.set_fact:
     clf_resultado: >-
       {% if not clf_exists %}La instancia ClusterLogForwarder (CLF) NO EXISTE
       {% elif not audit_configured %}La instancia ClusterLogForwarder existe - Nombre: {{ clf_info.resources[0].metadata.name }} - SIN AUDIT LOGS

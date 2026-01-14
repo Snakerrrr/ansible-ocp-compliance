@@ -23,7 +23,7 @@
     item.metadata.name in (remediation_name.replace('\n',',').split(',') | map('trim') | list)
 
 - name: "[REMEDY-ENFORCE] Pausa de sincronización"
-  pause:
+  ansible.builtin.pause:
     seconds: 8
 
 - name: "[REMEDY-INFORM] Obtener todas las ComplianceRemediations"
@@ -33,7 +33,7 @@
   register: rem_res
 
 - name: "[REMEDY-INFORM] Formatear reporte de remediaciones detectadas"
-  set_fact:
+  ansible.builtin.set_fact:
     remedy_resultado: |-
       TOTAL REMEDIACIONES DETECTADAS: {{ rem_res.resources | length }}
 

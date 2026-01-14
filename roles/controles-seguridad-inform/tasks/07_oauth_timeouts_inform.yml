@@ -9,7 +9,7 @@
   register: oauth_res
 
 - name: "[OAUTH-INFORM] Formatear listado completo de clientes"
-  set_fact:
+  ansible.builtin.set_fact:
     oauth_timeout_resultado: |-
       TIMEOUT Oauth Cluster (Configuración por defecto del Cluster): {{ oauth_res.results[0].resources[0].spec.tokenConfig.accessTokenInactivityTimeout | default('NO CONFIGURADO') }}
 

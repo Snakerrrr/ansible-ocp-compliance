@@ -11,12 +11,12 @@
   register: kube_oauth_res
 
 - name: "[KUBEADMIN] Procesar resultado"
-  set_fact:
+  ansible.builtin.set_fact:
     kubeadmin_exists: "{{ kube_oauth_res.results[0].resources | length > 0 }}"
     id_providers: "{{ kube_oauth_res.results[1].resources[0].spec.identityProviders | default([]) }}"
 
 - name: "[KUBEADMIN] Definir texto resultado"
-  set_fact:
+  ansible.builtin.set_fact:
     kubeadmin_resultado: >-
       {% if kubeadmin_exists == false %}
       KUBEADMIN NO EXISTE - NO ES NECESARIO ELIMINAR

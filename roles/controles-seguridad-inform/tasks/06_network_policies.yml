@@ -9,7 +9,7 @@
   register: net_res
 
 - name: "[NETPOL] Procesar Listados"
-  set_fact:
+  ansible.builtin.set_fact:
     netpol_protegidos: |-
       {% set lines = [] -%}
       {% set target_ns = net_res.results[0].resources | map(attribute='metadata.name') | reject('match', system_ns_regex) | list -%}

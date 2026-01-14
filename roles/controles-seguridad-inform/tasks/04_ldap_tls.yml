@@ -10,16 +10,16 @@
   register: kube_oauth_res
 
 - name: "Procesar resultado"
-  set_fact:
+  ansible.builtin.set_fact:
     id_providers: "{{ kube_oauth_res.results[1].resources[0].spec.identityProviders | default([]) }}"
 
 - name: "[LDAP] Filtrar Providers"
-  set_fact:
+  ansible.builtin.set_fact:
     ldap_idps: "{{ id_providers | selectattr('type', 'equalto', 'LDAP') | list }}"
   when: id_providers is defined
 
 - name: "[LDAP] Definir texto resultado"
-  set_fact:
+  ansible.builtin.set_fact:
     ldap_resultado: |-
       {% if ldap_idps | default([]) | length == 0 %}Protocolo LDAP NO configurado como IdentityProvider.
       {% else %}{% for idp in ldap_idps %}LDAP Configurado - Nombre: {{ idp.name }} - insecure: {{ idp.ldap.insecure | default(false) }}{% endfor %}{% endif %}
