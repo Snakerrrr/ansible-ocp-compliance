@@ -10,7 +10,7 @@
   community.general.mail:
     host: "{{ smtp_host }}"
     username: "{{ mail_from }}"
-    password: "{{ smtp_password }}"
+    password: "{{ email_smtp_password }}"
     port: 587
     to: "{{ mail_to }}"
     subject: "Reporte Seguridad OpenShift - {{ cluster_name }} - {{date}}"
