@@ -1,0 +1,6 @@
+---
+- name: Controles de seguridad - Inform
+  hosts: all
+  gather_facts: false
+  roles:
+    - controles-seguridad-inform

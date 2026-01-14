@@ -1,0 +1,50 @@
+---
+- name: "[INIT] Obtener infraestructura del cluster"
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Infrastructure
+    name: cluster
+  register: infra_info
+
+- name: "[INIT] Definir variables de ejecución"
+  set_fact:
+    cluster_name: "{{ infra_info.resources[0].status.infrastructureName | default('DESCONOCIDO') }}"
+
+# SECCIÓN INFORM 
+
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  include_tasks: 01_kubeadmin.yml
+  when: "'ALL' in report_name or 'kubeadmin' in report_name"
+
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  include_tasks: 02_log_forwarder.yml
+  when: "'ALL' in report_name or 'logs' in report_name"
+
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  include_tasks: 03_ingress_tls.yml
+  when: "'ALL' in report_name or 'ingress' in report_name"
+
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  include_tasks: 04_ldap_tls.yml
+  when: "'ALL' in report_name or 'ldap' in report_name"
+
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  include_tasks: 05_acs_sensor.yml
+  when: "'ALL' in report_name or 'acs' in report_name"
+
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  include_tasks: 06_network_policies.yml
+  when: "'ALL' in report_name or 'network' in report_name"
+
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  include_tasks: 07_oauth_timeouts_inform.yml
+  when: "'ALL' in report_name or 'oauth' in report_name"
+
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  include_tasks: automatic_remediation_inform.yml
+  when: "'ALL' in report_name or 'remediation' in report_name"
+
+# FINALIZACION
+
+- name: "[REPORT] Generar y enviar reporte consolidado"
+  include_tasks: 99_send_report.yml

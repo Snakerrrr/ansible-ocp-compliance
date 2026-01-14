@@ -1,0 +1,6 @@
+---
+- name: Controles de seguridad - Enforce
+  hosts: localhost
+  gather_facts: true
+  roles:
+    - controles-seguridad-enforce

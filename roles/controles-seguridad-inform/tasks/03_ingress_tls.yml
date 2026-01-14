@@ -1,0 +1,16 @@
+---
+- name: "[INGRESS] Obtener IngressController"
+  kubernetes.core.k8s_info:
+    api_version: operator.openshift.io/v1
+    kind: IngressController
+    name: default
+    namespace: openshift-ingress-operator
+  register: ingress_info
+
+- name: "[INGRESS] Definir texto resultado"
+  set_fact:
+    ingress_tls_resultado: |-
+      {% set ciphers = ingress_info.resources[0].status.tlsProfile.ciphers | default([]) if ingress_info.resources | length > 0 else [] %}
+      {% if ciphers | length == 0 %}No se encuentran ciphers TLS configurados en ingresscontrollers/default
+      {% else %}Listado de ciphers TLS configurados en ingresscontrollers/default:
+      {% for cipher in ciphers %}- {{ cipher }}{% endfor %}{% endif %}

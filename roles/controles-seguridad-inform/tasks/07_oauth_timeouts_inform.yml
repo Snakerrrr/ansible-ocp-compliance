@@ -1,0 +1,31 @@
+---
+- name: "[OAUTH-INFORM] Obtener configuración de OAuth (Global) y Clientes"
+  kubernetes.core.k8s_info:
+    api_version: "{{ item.api }}"
+    kind: "{{ item.kind }}"
+  loop:
+    - { api: "config.openshift.io/v1", kind: "OAuth" }       # results[0]
+    - { api: "oauth.openshift.io/v1", kind: "OAuthClient" } # results[1]
+  register: oauth_res
+
+- name: "[OAUTH-INFORM] Formatear listado completo de clientes"
+  set_fact:
+    oauth_timeout_resultado: |-
+      TIMEOUT Oauth Cluster (Configuración por defecto del Cluster): {{ oauth_res.results[0].resources[0].spec.tokenConfig.accessTokenInactivityTimeout | default('NO CONFIGURADO') }}
+
+      LISTADO DE OAUTH CLIENTS DETECTADOS:
+      ---------------------------------------------
+      {% set lines = [] -%}
+      {% for c in oauth_res.results[1].resources | sort(attribute='metadata.name') -%}
+        {# Verificamos si tiene configuración específica o usa la global #}
+        {% set c_tout = c.accessTokenInactivityTimeoutSeconds | default('N/A (Hereda Global)') -%}
+        
+        {% set _ = lines.append(
+          'Cliente: ' + c.metadata.name + 
+          '\nTimeout Configurado: ' + c_tout | string
+        ) -%}
+      {% endfor -%}
+      {{ lines | join('\n---------------------------------------------\n') }}
+
+
+      

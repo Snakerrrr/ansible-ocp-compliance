@@ -1,0 +1,27 @@
+---
+- name: "[KUBEADMIN] Obtener secreto y configuración OAuth"
+  kubernetes.core.k8s_info:
+    api_version: "{{ item.api }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name | default(omit) }}"
+    namespace: "{{ item.ns | default(omit) }}"
+  loop:
+    - { api: "v1", kind: "Secret", name: "kubeadmin", ns: "kube-system" }
+    - { api: "config.openshift.io/v1", kind: "OAuth", name: "cluster" }
+  register: kube_oauth_res
+
+- name: "[KUBEADMIN] Procesar resultado"
+  set_fact:
+    kubeadmin_exists: "{{ kube_oauth_res.results[0].resources | length > 0 }}"
+    id_providers: "{{ kube_oauth_res.results[1].resources[0].spec.identityProviders | default([]) }}"
+
+- name: "[KUBEADMIN] Definir texto resultado"
+  set_fact:
+    kubeadmin_resultado: >-
+      {% if kubeadmin_exists == false %}
+      KUBEADMIN NO EXISTE - NO ES NECESARIO ELIMINAR
+      {% elif kubeadmin_exists != false and not id_providers %}
+      KUBEADMIN EXISTE - IDENTITY PROVIDER NO - NO ES SEGURO ELIMINAR KUBEADMIN
+      {% elif kubeadmin_exists != false and id_providers %}
+      KUBEADMIN EXISTE - IDENTITY PROVIDER SI - ES SEGURO ELIMINAR
+      {% endif %}

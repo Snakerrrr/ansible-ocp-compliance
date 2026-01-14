@@ -1,0 +1,15 @@
+# Configuración de Correo
+send_mail: true
+mail_to: "jmunozag@redhat.com"
+mail_from: "botkev838@gmail.com"
+mail_password: "qfni wfkv uxsw dyjf"
+smtp_host: "smtp.gmail.com"
+
+# Reporte
+report_dir: "/tmp/ocp-reports"
+report_file: "reporte-seguridad-{{ lookup('pipe', 'date +%Y%m%d') }}"
+date: "{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}"
+
+
+#Namespaces filtrados en network policies
+system_ns_regex: "^(openshift.*|kube.*|default|stackrox)$"

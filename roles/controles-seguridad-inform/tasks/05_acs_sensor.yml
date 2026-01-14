@@ -1,0 +1,29 @@
+---
+# VERIFICACIÓN TÉCNICA DEL SENSOR ACS
+
+- name: Chequear existencia del Namespace stackrox
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: stackrox
+  register: ns_stackrox
+
+- name: Chequear Deployment del Sensor en stackrox
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: sensor
+    namespace: stackrox
+  register: sensor_deploy
+  when: ns_stackrox.resources | length > 0
+  
+- name: Evaluar cumplimiento de la política
+  set_fact:
+    acs_status: >-
+      {% if ns_stackrox.resources | length == 0 %}
+      Namespace stackrox no existe
+      {% elif sensor_deploy.resources | length == 0 %}
+      Deployment 'sensor' no encontrado
+      {% elif sensor_deploy.resources[0].status.availableReplicas | default(0) > 0 %}
+      Operativo 
+      {% endif %}

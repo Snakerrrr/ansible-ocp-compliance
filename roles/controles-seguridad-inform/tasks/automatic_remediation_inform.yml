@@ -1,0 +1,26 @@
+---
+- name: "[REMEDY-INFORM] Obtener todas las ComplianceRemediations"
+  kubernetes.core.k8s_info:
+    api_version: compliance.openshift.io/v1alpha1
+    kind: ComplianceRemediation
+  register: rem_res
+
+- name: "[REMEDY-INFORM] Formatear reporte de remediaciones detectadas"
+  set_fact:
+    remedy_resultado: |-
+      TOTAL REMEDIACIONES DETECTADAS: {{ rem_res.resources | length }}
+
+      LISTADO DE COMPLIANCE REMEDIATIONS:
+      ---------------------------------------------
+      {% set results = [] -%}
+      {% if rem_res.resources | length == 0 %}
+        Scanner Compliance no ejecutado
+      {% else %}
+      {% for r in rem_res.resources | sort(attribute='metadata.name') -%}
+        {% set _ = results.append(
+          'Nombre: ' + r.metadata.name + 
+          '\nEstado Actual: ' + (r.status.applicationState | default('PENDIENTE'))
+        ) -%}
+      {% endfor -%}
+      {{ results | join('\n---------------------------------------------\n') }}
+      {% endif %}

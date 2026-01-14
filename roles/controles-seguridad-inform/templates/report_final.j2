@@ -1,0 +1,77 @@
+[INFORM] - REPORTE DE SEGURIDAD OPENSHIFT
+=============================================================
+Fecha: {{ lookup('pipe', 'date --iso-8601=seconds') }}
+Cluster: {{ cluster_name }}
+=============================================================
+
+{% if kubeadmin_resultado is defined %}
+---------------------------------
+SECRET KUBEADMIN
+---------------------------------
+Ensure that the kubeadmin secret has been removed - ocp4-pci-dss-4-0-kubeadmin-removed
+{{ kubeadmin_resultado }}
+{% endif %}
+
+{% if clf_resultado is defined %}
+---------------------------------
+REVISIÓN AUDIT CLUSTERLOGFORWARDER
+---------------------------------
+Ensure that Audit Log Forwarding Is Enabled - ocp4-pci-dss-4-0-audit-log-forwarding-enabled
+{{ clf_resultado }}
+{% endif %}
+
+{% if ingress_tls_resultado is defined %}
+---------------------------------
+LISTADO CIPHERS TLS INGRESSCONTROLLER
+---------------------------------
+Ensure that the Ingress Controller only makes use of Strong - ocp4-pci-dss-4-0-ingress-controller-tls-cipher-suites
+Listado de TLS configurados en ingresscontrollers/default:
+{{ ingress_tls_resultado | replace('\\n', '\n') }}
+{% endif %}
+
+{% if ldap_resultado is defined %}
+---------------------------------
+CONFIGURACIÓN LDAP IDENTITYPROVIDERS TLS
+---------------------------------
+Only Use LDAP-based IdPs with TLS - ocp4-pci-dss-4-0-ocp-no-ldap-insecure
+{{ ldap_resultado | replace('\\n', '\n') }}
+{% endif %}
+
+{% if acs_status is defined %}
+---------------------------------
+INSTANCIA ACS SENSOR
+---------------------------------
+Ensure that Advanced Cluster Security (ACS) Sensor is deployed - ocp4-pci-dss-4-0-acs-sensor-exists
+{{ acs_status }}
+{% endif %}
+
+{% if netpol_protegidos is defined %}
+---------------------------------
+RECURSOS NETWORKPOLICIES
+---------------------------------
+Ensure that application Namespaces have Network Policies defined - ocp4-pci-dss-4-0-configure-network-policies-namespaces
+
+1. NAMESPACES CON NETWORK POLICIES DEFINIDAS
+---------------------------------------------
+{{ netpol_protegidos | replace('\\n', '\n') }}
+
+2. NAMESPACES SIN NETWORK POLICIES (EXPUESTOS)
+---------------------------------------------
+{{ netpol_expuestos | replace('\\n', '\n') }}
+{% endif %}
+
+{% if oauth_timeout_resultado is defined %}
+---------------------------------
+OAUTH TIMEOUTS
+---------------------------------
+Configure OAuth tokens to expire after a set period of inactivity - ocp4-pci-dss-4-0-oauth-or-oauthclient-inactivity-timeout
+{{ oauth_timeout_resultado | replace('\\n', '\n') }}
+{% endif %}
+
+{% if remedy_resultado is defined %}
+---------------------------------
+LISTA DE REMEDIACIONES AUTOMATICAS
+---------------------------------
+
+{{ remedy_resultado | replace('\\n', '\n') }}
+{% endif %}

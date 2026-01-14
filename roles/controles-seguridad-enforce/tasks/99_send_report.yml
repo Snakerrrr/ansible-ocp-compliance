@@ -1,0 +1,19 @@
+---
+- name: "[REPORT] Crear directorio y Guardar TXT"
+  block:
+    - file: { path: "{{ report_dir }}", state: directory }
+    - template:
+        src: report_final.j2
+        dest: "{{ report_dir }}/{{ report_file }}.txt"
+
+- name: "[REPORT] Enviar por correo"
+  community.general.mail:
+    host: "{{ smtp_host }}"
+    username: "{{ mail_from }}"
+    password: "{{ mail_password }}"
+    port: 587
+    to: "{{ mail_to }}"
+    subject: "Reporte Seguridad OpenShift - {{ cluster_name }} - {{date}}"
+    body: "{{ lookup('file', report_dir + '/' + report_file + '.txt') }}"
+    attach: "{{ report_dir }}/{{ report_file }}.txt"
+  when: send_mail | bool

@@ -1,0 +1,35 @@
+[ENFORCE] - REPORTE DE SEGURIDAD OPENSHIFT
+=============================================================
+Fecha: {{ lookup('pipe', 'date --iso-8601=seconds') }}
+Cluster: {{ cluster_name }}
+
+=============================================================
+
+{% if oauth_enforce_resultado is defined %}
+
+---------------------------------
+OAUTH INACTIVITY TIMEOUT
+---------------------------------
+Configure OAuth tokens to expire after a set period of inactivity - ocp4-pci-dss-4-0-oauth-or-oauthclient-inactivity-timeout
+
+*DETALLE DE CLIENTES (OAuthClients)
+---------------------------------------------
+{{ oauth_enforce_resultado | indent(width=0) }}
+{% endif %}
+
+{% if remedy_resultado is defined %}
+
+---------------------------------
+COMPLIANCE REMEDIATIONS STATUS
+---------------------------------
+Filtro aplicado: {{ remediation_name if remediation_name != '' else 'TODOS' }}
+{{ remedy_resultado | replace('\\n', '\n') }}
+{% endif %}
+
+
+=============================================================
+RESUMEN DE EJECUCION:
+
+Se ejecutaron acciones de remediacion (ENFORCE) en los modulos: {{ enforce_list }}.
+
+=============================================================
