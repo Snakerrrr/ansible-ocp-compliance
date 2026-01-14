@@ -1,6 +1,5 @@
 # Configuración de Correo
 send_mail: true
-mail_to: "jmunozag@redhat.com"
 mail_from: "botkev838@gmail.com"
 mail_password: "qfni wfkv uxsw dyjf"
 smtp_host: "smtp.gmail.com"
