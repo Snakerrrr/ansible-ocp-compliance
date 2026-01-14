@@ -18,33 +18,6 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
 - **100% Agnóstico**: Sin valores hardcodeados, todas las variables se inyectan desde AAP
 - **Mejores Prácticas**: Todos los módulos de Ansible utilizan FQDN (Fully Qualified Domain Names) para mayor claridad y compatibilidad
 
-## Mejoras Recientes
-
-### Soporte de Environment Variables desde AAP Credentials
-
-Los playbooks `inform.yaml` y `enforce.yaml` ahora soportan la inyección automática de credenciales SMTP desde **Environment Variables** configuradas en Ansible Automation Platform (AAP).
-
-Cuando se utiliza un **Credential Type** en AAP que inyecta variables de entorno (por ejemplo, `EMAIL_SMTP_PASSWORD`), los roles `controles-seguridad-inform` y `controles-seguridad-enforce` normalizan automáticamente estas variables antes de usarlas.
-
-**Ejemplo de Credential Type en AAP:**
-- **Input configuration**: Define `smtp_password` como campo secreto
-- **Injector configuration**: Inyecta `EMAIL_SMTP_PASSWORD` como variable de entorno
-
-Los roles detectan automáticamente la variable de entorno `EMAIL_SMTP_PASSWORD` y la mapean a `email_smtp_password` para su uso interno.
-
-### Actualización de Módulos con FQDN
-
-Todos los módulos de Ansible en los playbooks `inform.yaml` y `enforce.yaml`, así como en los roles `controles-seguridad-inform` y `controles-seguridad-enforce`, ahora utilizan **Fully Qualified Domain Names (FQDN)**:
-
-- `file` → `ansible.builtin.file`
-- `template` → `ansible.builtin.template`
-- `set_fact` → `ansible.builtin.set_fact`
-- `include_tasks` → `ansible.builtin.include_tasks`
-- `pause` → `ansible.builtin.pause`
-- `mail` → `community.general.mail`
-
-Esto mejora la claridad del código, evita conflictos de nombres y sigue las mejores prácticas recomendadas por Ansible.
-
 ## Estructura del Proyecto
 
 ```
@@ -312,7 +285,7 @@ flowchart TD
     style SendEmail fill:#F0E68C
 ```
 
-### Descripción de las Fases
+### Descripción de las Fases Healthcheck
 
 1. **Normalización de Credenciales**: Lee credenciales desde Environment Variables de AAP y las convierte en variables de Ansible
 2. **Validación**: Verifica que todas las variables requeridas estén presentes según los flags activados
@@ -379,11 +352,6 @@ El playbook `orchestrator_aap_multicluster.yml` procesa múltiples clusters en u
 - **Validación de inputs**: El playbook valida que todas las variables requeridas estén presentes
 - **Credenciales seguras**: Soporte para Source Control Credentials y Environment Variables en AAP
 - **Soporte de Environment Variables**: Los playbooks `inform.yaml` y `enforce.yaml` normalizan automáticamente las credenciales SMTP desde Environment Variables inyectadas por Credential Types de AAP
-
-### Calidad de Código
-
-- **FQDN en módulos**: Todos los módulos de Ansible utilizan Fully Qualified Domain Names (FQDN) para mayor claridad y evitar conflictos de nombres
-- **Mejores prácticas**: El código sigue las recomendaciones oficiales de Ansible para mantenibilidad y compatibilidad
 
 ### 100% Agnóstico
 
@@ -508,8 +476,6 @@ Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`
 | `email_from` | string | Remitente | - |
 | `email_subject_prefix` | string | Prefijo del asunto | - |
 | `email_smtp_timeout` | integer | Timeout SMTP en segundos | `60` |
-
-**Nota sobre Credenciales SMTP en AAP**: Los playbooks `inform.yaml` y `enforce.yaml` soportan la inyección automática de credenciales SMTP desde **Environment Variables** de AAP. Si utilizas un Credential Type que inyecta `EMAIL_SMTP_PASSWORD` como variable de entorno, el rol la normalizará automáticamente. También puedes pasar `email_smtp_password` directamente como variable de Ansible.
 
 ### Variables de Multi-Cluster
 
