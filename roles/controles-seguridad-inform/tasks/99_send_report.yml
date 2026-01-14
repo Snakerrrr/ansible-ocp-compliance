@@ -6,6 +6,11 @@
         src: report_final.j2
         dest: "{{ report_dir }}/{{ report_file }}.txt"
 
+- name: "[REPORT] Normalizar credenciales desde Environment Variables"
+  ansible.builtin.set_fact:
+    email_smtp_password: "{{ lookup('env', 'EMAIL_SMTP_PASSWORD') | default(email_smtp_password | default('')) }}"
+  when: send_mail | bool
+
 - name: "[REPORT] Enviar por correo"
   community.general.mail:
     host: "{{ smtp_host }}"
