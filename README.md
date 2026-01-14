@@ -10,6 +10,9 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
 - **Compliance Operator**: Escaneos automáticos y periódicos de compliance (CIS, PCI-DSS)
 - **Exportación de Reportes**: Generación de reportes HTML desde los resultados de compliance
   - Soporta estándares específicos: `ocp4-pci-dss-4-0`, `ocp4-pci-dss-node-4-0-*`, `ocp4-cis-1-7`, `ocp4-cis-node-1-7-*`
+- **Controles de Seguridad**: Playbooks especializados para informar y aplicar controles de seguridad
+  - **Inform**: Revisión y reporte de controles de seguridad (kubeadmin, logs, ingress, LDAP, ACS, network policies, OAuth, remediaciones)
+  - **Enforce**: Aplicación automática de remediaciones y configuración de controles (OAuth timeouts, ComplianceRemediations)
 - **Multi-cluster**: Soporte para ejecución en múltiples clusters gestionados desde un Hub
 - **Envío de Reportes**: Envío consolidado de reportes por correo electrónico (soporta múltiples destinatarios)
 - **100% Agnóstico**: Sin valores hardcodeados, todas las variables se inyectan desde AAP
@@ -19,7 +22,9 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
 ```
 .
 ├── playbooks/                              # Playbooks principales
-│   └── orchestrator_aap_multicluster.yml   # Orquestador multi-cluster para ejecución en AAP
+│   ├── orchestrator_aap_multicluster.yml   # Orquestador multi-cluster para ejecución en AAP
+│   ├── enforce.yaml                        # Playbook para aplicar controles de seguridad (enforce)
+│   └── inform.yaml                         # Playbook para informar sobre controles de seguridad (inform)
 ├── roles/                                  # Roles de Ansible
 │   ├── gitops_policy_update/               # Actualización de políticas GitOps
 │   │   ├── defaults/
@@ -37,17 +42,43 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
 │   ├── compliance_wait/                    # Espera de instalación del Compliance Operator
 │   │   └── tasks/
 │   │       └── main.yml                    # Tareas de espera
-│   └── compliance_export_html/             # Exportación de reportes HTML desde PVCs
+│   ├── compliance_export_html/             # Exportación de reportes HTML desde PVCs
+│   │   ├── defaults/
+│   │   │   └── main.yml                    # Variables por defecto del rol
+│   │   ├── tasks/
+│   │   │   ├── main.yml                    # Tareas principales de exportación
+│   │   │   └── process_pvc.yml            # Procesamiento de PVCs
+│   │   └── templates/
+│   │       ├── extract-kubeconfig.sh.j2   # Script para extraer kubeconfig
+│   │       ├── extract-pod.yaml.j2        # Template de Pod para extracción
+│   │       ├── render_reports.sh.j2       # Script para renderizar reportes HTML
+│   │       └── summary.txt.j2             # Template de resumen
+│   ├── controles-seguridad-enforce/        # Aplicación de controles de seguridad (enforce)
+│   │   ├── defaults/
+│   │   │   └── main.yaml                   # Variables por defecto del rol
+│   │   ├── tasks/
+│   │   │   ├── main.yaml                   # Tareas principales de enforce
+│   │   │   ├── remediaciones_automaticas_enforce.yaml  # Aplicación de ComplianceRemediations
+│   │   │   ├── 071_oauth_timeouts_enforce.yml         # Configuración de timeouts OAuth
+│   │   │   └── 99_send_report.yml          # Generación y envío de reportes
+│   │   └── templates/
+│   │       └── report_final.j2             # Template de reporte final
+│   └── controles-seguridad-inform/         # Información sobre controles de seguridad (inform)
 │       ├── defaults/
-│       │   └── main.yml                    # Variables por defecto del rol
+│       │   └── main.yaml                   # Variables por defecto del rol
 │       ├── tasks/
-│       │   ├── main.yml                    # Tareas principales de exportación
-│       │   └── process_pvc.yml            # Procesamiento de PVCs
+│       │   ├── main.yaml                   # Tareas principales de inform
+│       │   ├── 01_kubeadmin.yml            # Revisión de kubeadmin
+│       │   ├── 02_log_forwarder.yml         # Revisión de log forwarder
+│       │   ├── 03_ingress_tls.yml          # Revisión de TLS en ingress
+│       │   ├── 04_ldap_tls.yml             # Revisión de TLS en LDAP
+│       │   ├── 05_acs_sensor.yml           # Revisión de ACS sensor
+│       │   ├── 06_network_policies.yml     # Revisión de network policies
+│       │   ├── 07_oauth_timeouts_inform.yml # Revisión de timeouts OAuth
+│       │   ├── automatic_remediation_inform.yml  # Información de remediaciones automáticas
+│       │   └── 99_send_report.yml          # Generación y envío de reportes
 │       └── templates/
-│           ├── extract-kubeconfig.sh.j2   # Script para extraer kubeconfig
-│           ├── extract-pod.yaml.j2        # Template de Pod para extracción
-│           ├── render_reports.sh.j2       # Script para renderizar reportes HTML
-│           └── summary.txt.j2             # Template de resumen
+│           └── report_final.j2             # Template de reporte final
 ├── ee-compliance/                          # Execution Environment personalizado
 │   ├── execution-environment.yml          # Configuración del EE
 │   ├── requirements.yml                   # Dependencias de Ansible (colecciones)
@@ -133,6 +164,8 @@ El Execution Environment debe incluir las siguientes dependencias:
 
 ### Ejecución desde línea de comandos (Desarrollo/Testing)
 
+#### Playbook Orquestador Multi-Cluster
+
 ```bash
 # Ejecutar solo GitOps (actualizar políticas)
 ansible-playbook playbooks/orchestrator_aap_multicluster.yml \
@@ -168,6 +201,45 @@ ansible-playbook playbooks/orchestrator_aap_multicluster.yml \
   -e "email_to=destinatario1@empresa.com,destinatario2@empresa.com" \
   -e "email_from=compliance@empresa.com" \
   -e "email_subject_prefix=Reporte de compliance multicluster"
+```
+
+#### Playbook Inform (Revisión de Controles de Seguridad)
+
+```bash
+# Ejecutar todas las revisiones (ALL)
+ansible-playbook playbooks/inform.yaml \
+  -i inventories/localhost.yml \
+  -e "report_name=ALL"
+
+# Ejecutar revisiones específicas
+ansible-playbook playbooks/inform.yaml \
+  -i inventories/localhost.yml \
+  -e "report_name=kubeadmin,logs,ingress"
+
+# Ejecutar solo revisión de OAuth
+ansible-playbook playbooks/inform.yaml \
+  -i inventories/localhost.yml \
+  -e "report_name=oauth"
+```
+
+#### Playbook Enforce (Aplicación de Controles de Seguridad)
+
+```bash
+# Aplicar todas las remediaciones y controles (ALL)
+ansible-playbook playbooks/enforce.yaml \
+  -i inventories/localhost.yml \
+  -e "enforce_list=ALL"
+
+# Aplicar solo remediaciones automáticas
+ansible-playbook playbooks/enforce.yaml \
+  -i inventories/localhost.yml \
+  -e "enforce_list=remediaciones_automaticas"
+
+# Aplicar solo configuración de OAuth timeouts
+ansible-playbook playbooks/enforce.yaml \
+  -i inventories/localhost.yml \
+  -e "enforce_list=oauth" \
+  -e "oauth_client=ALL"
 ```
 
 ## Diagrama de Flujo
@@ -224,6 +296,40 @@ flowchart TD
 
 ## Características Principales
 
+### Playbooks de Controles de Seguridad
+
+El proyecto incluye dos playbooks especializados para la gestión de controles de seguridad:
+
+#### Playbook `inform.yaml`
+
+Ejecuta revisiones y genera reportes sobre el estado de los controles de seguridad sin realizar cambios. Incluye:
+
+- **Kubeadmin**: Verifica la existencia del usuario kubeadmin y si es seguro eliminarlo
+- **Log Forwarder**: Revisa la configuración del log forwarder
+- **Ingress TLS**: Verifica la configuración TLS en los recursos de ingress
+- **LDAP TLS**: Revisa la configuración TLS en la integración LDAP
+- **ACS Sensor**: Verifica el estado del sensor de Advanced Cluster Security
+- **Network Policies**: Revisa las políticas de red configuradas
+- **OAuth Timeouts**: Informa sobre la configuración actual de timeouts OAuth
+- **Remediaciones Automáticas**: Lista las ComplianceRemediations detectadas por el Compliance Operator
+
+**Variables principales:**
+- `report_name`: Controla qué revisiones ejecutar (`ALL` para todas, o lista separada por comas: `kubeadmin,logs,ingress`)
+
+#### Playbook `enforce.yaml`
+
+Aplica cambios y configura controles de seguridad automáticamente. Incluye:
+
+- **Remediaciones Automáticas**: Aplica ComplianceRemediations del Compliance Operator
+- **OAuth Timeouts**: Configura timeouts de OAuth globales y por cliente
+  - Timeout global: `10m0s` (accessTokenInactivityTimeout)
+  - Timeout por cliente: `600s` (accessTokenInactivityTimeoutSeconds)
+
+**Variables principales:**
+- `enforce_list`: Controla qué controles aplicar (`ALL` para todos, o lista: `remediaciones_automaticas,oauth`)
+- `remediation_name`: Filtro para remediaciones específicas (default: `ALL`)
+- `oauth_client`: Filtro para clientes OAuth específicos (default: `ALL`)
+
 ### Multi-Cluster Support
 
 El playbook `orchestrator_aap_multicluster.yml` procesa múltiples clusters en una sola ejecución:
@@ -266,6 +372,70 @@ El rol `compliance_export_html` procesa únicamente los siguientes estándares d
 **Nota**: El filtro utiliza coincidencias exactas para los estándares de plataforma y coincidencias por prefijo para los estándares de nodos, permitiendo capturar automáticamente todas las variantes con sufijos de nodos (ej: `ocp4-cis-node-1-7-master`, `ocp4-cis-node-1-7-worker`, `ocp4-pci-dss-node-4-0-master`, etc.).
 
 Los PVCs que no coincidan con estos estándares serán ignorados durante el procesamiento.
+
+## Roles de Controles de Seguridad
+
+### Rol `controles-seguridad-inform`
+
+Este rol realiza revisiones y auditorías de controles de seguridad sin realizar cambios en el cluster. Genera reportes detallados sobre el estado actual de la configuración.
+
+#### Tareas de Revisión
+
+1. **01_kubeadmin.yml**: Verifica la existencia del usuario kubeadmin y evalúa si es seguro eliminarlo basándose en la presencia de identity providers configurados.
+
+2. **02_log_forwarder.yml**: Revisa la configuración del log forwarder y su estado operativo.
+
+3. **03_ingress_tls.yml**: Verifica la configuración TLS en los recursos de ingress del cluster.
+
+4. **04_ldap_tls.yml**: Revisa la configuración TLS en la integración LDAP/Active Directory.
+
+5. **05_acs_sensor.yml**: Verifica el estado del sensor de Advanced Cluster Security (ACS/StackRox).
+
+6. **06_network_policies.yml**: Revisa las políticas de red configuradas y genera un reporte de cobertura.
+
+7. **07_oauth_timeouts_inform.yml**: Informa sobre la configuración actual de timeouts OAuth (global y por cliente).
+
+8. **automatic_remediation_inform.yml**: Lista todas las ComplianceRemediations detectadas por el Compliance Operator y su estado actual.
+
+9. **99_send_report.yml**: Genera un reporte consolidado y lo envía por correo electrónico.
+
+#### Control de Ejecución
+
+Las tareas se ejecutan condicionalmente basándose en la variable `report_name`:
+- `ALL`: Ejecuta todas las revisiones
+- Lista específica: Ejecuta solo las revisiones especificadas (ej: `kubeadmin,logs,ingress`)
+
+### Rol `controles-seguridad-enforce`
+
+Este rol aplica cambios y configura controles de seguridad automáticamente en el cluster.
+
+#### Tareas de Aplicación
+
+1. **remediaciones_automaticas_enforce.yaml**: 
+   - Obtiene todas las ComplianceRemediations del Compliance Operator
+   - Aplica las remediaciones configurando `spec.apply: true`
+   - Genera un reporte con el estado de aplicación
+   - Soporta filtrado por nombre de remediación mediante la variable `remediation_name`
+
+2. **071_oauth_timeouts_enforce.yml**:
+   - Configura el timeout global de OAuth a `10m0s` (accessTokenInactivityTimeout)
+   - Configura timeouts por cliente OAuth a `600s` (accessTokenInactivityTimeoutSeconds)
+   - Genera un respaldo de la configuración original antes de aplicar cambios
+   - Soporta filtrado de clientes mediante la variable `oauth_client`
+
+3. **99_send_report.yml**: Genera un reporte consolidado con todas las acciones realizadas y lo envía por correo electrónico.
+
+#### Control de Ejecución
+
+Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`:
+- `ALL`: Aplica todos los controles
+- Lista específica: Aplica solo los controles especificados (ej: `remediaciones_automaticas,oauth`)
+
+#### Seguridad y Respaldo
+
+- El rol genera respaldos de la configuración original antes de aplicar cambios
+- Los respaldos se incluyen en el reporte final para facilitar la reversión si es necesario
+- Las acciones se registran detalladamente en el reporte
 
 ## Variables Principales
 
@@ -310,6 +480,33 @@ Los PVCs que no coincidan con estos estándares serán ignorados durante el proc
 | Variable | Tipo | Descripción | Default |
 |----------|------|-------------|---------|
 | `survey_target_clusters` | string/list | Lista de clusters a procesar | - |
+
+### Variables de Controles de Seguridad - Inform
+
+| Variable | Tipo | Descripción | Default |
+|----------|------|-------------|---------|
+| `report_name` | string | Controles a revisar (`ALL` o lista: `kubeadmin,logs,ingress,ldap,acs,network,oauth,remediation`) | `ALL` |
+| `send_mail` | boolean | Activar envío de reporte por correo | `true` |
+| `mail_to` | string | Destinatario del correo | - |
+| `mail_from` | string | Remitente del correo | - |
+| `mail_password` | string | Contraseña SMTP (🔒 Credential) | - |
+| `smtp_host` | string | Servidor SMTP | - |
+| `report_dir` | string | Directorio para guardar reportes | `/tmp/ocp-reports` |
+| `system_ns_regex` | string | Expresión regular para filtrar namespaces del sistema en network policies | `^(openshift.*\|kube.*\|default\|stackrox)$` |
+
+### Variables de Controles de Seguridad - Enforce
+
+| Variable | Tipo | Descripción | Default |
+|----------|------|-------------|---------|
+| `enforce_list` | string | Controles a aplicar (`ALL` o lista: `remediaciones_automaticas,oauth`) | `ALL` |
+| `remediation_name` | string | Filtro de remediaciones (`ALL` o lista separada por comas) | `ALL` |
+| `oauth_client` | string | Filtro de clientes OAuth (`ALL` o lista separada por comas) | `ALL` |
+| `send_mail` | boolean | Activar envío de reporte por correo | `true` |
+| `mail_to` | string | Destinatario del correo | - |
+| `mail_from` | string | Remitente del correo | - |
+| `mail_password` | string | Contraseña SMTP (🔒 Credential) | - |
+| `smtp_host` | string | Servidor SMTP | - |
+| `report_dir` | string | Directorio para guardar reportes | `/tmp/ocp-reports` |
 
 **🔒 SEGURIDAD**: Las variables marcadas con 🔒 deben configurarse como **Credentials** o **Environment Variables** en AAP (nunca en texto plano).
 
