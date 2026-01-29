@@ -240,14 +240,16 @@
         - all_zip_files.files | length > 0
 
     - name: Añadir archivos y hacer commit
-      ansible.builtin.command:
-        cmd: >
-          git add reports/
-          && git commit -m "{{ gitlab_commit_message | default('Compliance reports - ' ~ (clusters_with_reports | default([]) | join(', ')) ~ ' - ' ~ ansible_date_time.iso8601) }}"
+      ansible.builtin.shell: |
+        git add reports/
+        && git commit -m "{{ gitlab_commit_message | default('Compliance reports - ' ~ (clusters_with_reports | default([]) | join(', ')) ~ ' - ' ~ ansible_date_time.iso8601) }}"
+      args:
         chdir: "{{ git_workdir }}"
       register: git_commit_result
-      changed_when: "'nothing to commit' not in (git_commit_result.stderr | default(''))"
-      failed_when: git_commit_result.rc != 0 and 'nothing to commit' not in (git_commit_result.stderr | default(''))
+      changed_when: "'nothing to commit' not in ((git_commit_result.stderr | default('')) ~ (git_commit_result.stdout | default('')))"
+      failed_when: >
+        git_commit_result.rc != 0
+        and 'nothing to commit' not in ((git_commit_result.stderr | default('')) ~ (git_commit_result.stdout | default('')))
       when:
         - do_push_gitlab | bool
         - all_zip_files is defined
