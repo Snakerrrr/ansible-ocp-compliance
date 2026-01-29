@@ -1,4 +1,9 @@
 ---
+# Timestamp sin depender de gather_facts (ansible_date_time)
+- name: "[REPORT] Definir timestamp actual (compatible con gather_facts: false)"
+  ansible.builtin.set_fact:
+    current_timestamp: "{{ lookup('pipe', 'date +%Y-%m-%dT%H:%M:%SZ') }}"
+
 # Generar reporte local (sin correo)
 - name: "[REPORT] Crear directorio y guardar reporte TXT"
   block:
@@ -46,7 +51,7 @@
 - name: "[REPORT] Copiar reporte al repo (resultado_enforce_<timestamp>.txt)"
   ansible.builtin.copy:
     src: "{{ report_dir }}/{{ report_file }}.txt"
-    dest: "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ target_cluster_folder }}/resultado_enforce_{{ ansible_date_time.iso8601 | regex_replace(':', '-') }}.txt"
+    dest: "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ target_cluster_folder }}/resultado_enforce_{{ current_timestamp | regex_replace(':', '-') }}.txt"
     remote_src: false
     mode: "0644"
   when: do_push_gitlab | default(false) | bool
@@ -71,7 +76,7 @@
 - name: "[REPORT] Añadir archivos y hacer commit"
   ansible.builtin.shell: >-
     git add reportes_controles_seguridad/
-    && git commit -m "Reporte enforce - {{ target_cluster_folder }} - {{ ansible_date_time.iso8601 }}"
+    && git commit -m "Reporte enforce - {{ target_cluster_folder }} - {{ current_timestamp }}"
   args:
     chdir: "{{ git_workdir | default('/tmp/controles-seguridad-git') }}"
   register: git_commit_result
