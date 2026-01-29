@@ -207,10 +207,24 @@
         - all_zip_files is defined
         - all_zip_files.files | length > 0
 
-    - name: Copiar reportes ZIP al repositorio clonado
+    - name: Crear subcarpetas de reportes por cluster
+      ansible.builtin.file:
+        path: "{{ git_workdir }}/reports/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ clusters_with_reports | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - do_push_gitlab | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+        - clusters_with_reports is defined
+
+    - name: Copiar reportes ZIP al repositorio clonado (reports/<cluster>/<archivo>.zip)
       ansible.builtin.copy:
         src: "{{ item.path }}"
-        dest: "{{ git_workdir }}/reports/{{ item.path | basename }}"
+        dest: "{{ git_workdir }}/reports/{{ item.path | regex_replace('.*/([^/]+)/[^/]+\\.zip$', '\\1') }}/{{ item.path | basename }}"
         remote_src: true
         mode: "0644"
       loop: "{{ all_zip_files.files }}"
@@ -233,6 +247,21 @@
     - name: Configurar email Git para commit
       ansible.builtin.command:
         cmd: git config user.email "{{ gitlab_user | default('ansible-bot') }}@users.noreply.gitlab.com"
+        chdir: "{{ git_workdir }}"
+      when:
+        - do_push_gitlab | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+
+    - name: Aplicar política de retención (mantener solo 5 ZIPs más recientes por cluster)
+      ansible.builtin.shell: |
+        set -e
+        cd "{{ git_workdir }}/reports"
+        for d in */; do
+          [ -d "$d" ] || continue
+          (cd "$d" && ls -1 *.zip 2>/dev/null | sort -r | tail -n +6 | while read f; do rm -f "$f"; done)
+        done
+      args:
         chdir: "{{ git_workdir }}"
       when:
         - do_push_gitlab | bool
