@@ -12,7 +12,8 @@
     # Defaults de seguridad (para que no falle si no se pasan)
     do_gitops: false
     do_export_html: false
-    do_send_email: false
+    do_push_gitlab: false
+    git_workdir: "/tmp/compliance-reports-git"
     
   tasks:
     # ---------------------------------------------------------
@@ -24,11 +25,9 @@
     # puedan verificar las variables normalizadas
     - name: Normalizar credenciales desde Environment Variables
       ansible.builtin.set_fact:
-        # Credenciales SMTP desde Environment Variables (si están definidas)
-        email_smtp_password: "{{ lookup('env', 'EMAIL_SMTP_PASSWORD') | default(email_smtp_password | default('')) }}"
-        email_smtp_username: "{{ lookup('env', 'EMAIL_SMTP_USERNAME') | default(email_smtp_username | default('')) }}"
-        email_from: "{{ lookup('env', 'EMAIL_FROM') | default(email_from | default('')) }}"
-        email_to: "{{ lookup('env', 'EMAIL_TO') | default(email_to | default('')) }}"
+        # Credenciales GitLab desde Environment Variables (si están definidas)
+        gitlab_token: "{{ lookup('env', 'GITLAB_TOKEN') | default(gitlab_token | default('')) }}"
+        gitlab_user: "{{ lookup('env', 'GITLAB_USER') | default(gitlab_user | default('')) }}"
         # Credenciales GitHub desde Environment Variables (si están definidas)
         github_token: "{{ lookup('env', 'GITHUB_TOKEN') | default(github_token | default('')) }}"
         github_user: "{{ lookup('env', 'GITHUB_USER') | default(github_user | default('')) }}"
@@ -49,24 +48,24 @@
         fail_msg: "ERROR: Faltan variables de Git. Defínalas en AAP (Extra Vars, Survey, Environment Variables o Credential de Source Control)."
       when: do_gitops | bool
 
-    - name: Validar variables obligatorias de correo
+    - name: Validar variables obligatorias de GitLab
       ansible.builtin.assert:
         that:
-          - email_smtp_host is defined
-          - email_smtp_host | length > 0
-          - email_smtp_username is defined
-          - email_smtp_username | length > 0
-          - email_smtp_password is defined
-          - email_smtp_password | length > 0
-          - email_to is defined
-          - email_to | length > 0
-        fail_msg: "ERROR: Faltan variables de Correo. Defínalas en AAP (Extra Vars, Survey o Environment Variables)."
-      when: do_send_email | bool
+          - gitlab_repo_url is defined
+          - gitlab_repo_url | length > 0
+          - gitlab_token is defined
+          - gitlab_token | length > 0
+          - gitlab_user is defined
+          - gitlab_user | length > 0
+          - git_workdir is defined
+          - git_workdir | length > 0
+        fail_msg: "ERROR: Faltan variables de GitLab. Defínalas en AAP (Extra Vars, Survey o Credential)."
+      when: do_push_gitlab | bool
 
     - name: Validar flags de control
       ansible.builtin.fail:
-        msg: "Al menos uno de los flags debe estar activado: do_gitops o do_export_html"
-      when: not do_gitops and not do_export_html
+        msg: "Al menos uno de los flags debe estar activado: do_gitops, do_export_html o do_push_gitlab"
+      when: not do_gitops and not do_export_html and not do_push_gitlab
 
     # ---------------------------------------------------------
     # 3. NORMALIZACIÓN DE DATOS (Sanitización)
@@ -94,11 +93,11 @@
           Clusters:       {{ target_clusters_list }}
           GitOps:         {{ do_gitops }}
           Export HTML:    {{ do_export_html }}
-          Enviar Correo:  {{ do_send_email }}
+          Push GitLab:    {{ do_push_gitlab }}
           User Git:       {{ github_user if (do_gitops and github_user is defined) else 'N/A' }}
           Branch:         {{ gitops_repo_branch if (do_gitops and gitops_repo_branch is defined) else 'N/A' }}
-          Destinatario:   {{ email_to if (do_send_email and email_to is defined) else 'N/A' }}
-          Host SMTP:      {{ email_smtp_host if (do_send_email and email_smtp_host is defined) else 'N/A' }}
+          GitLab Repo:    {{ gitlab_repo_url if (do_push_gitlab and gitlab_repo_url is defined) else 'N/A' }}
+          Git Workdir:    {{ git_workdir if (do_push_gitlab and git_workdir is defined) else 'N/A' }}
           ====================================
 
     # ---------------------------------------------------------
@@ -138,8 +137,7 @@
         managed_cluster_name: "{{ item }}"
         # Mapear export_output_dir del playbook a compliance_reports_path del rol
         compliance_reports_path: "{{ export_output_dir | default('/tmp/compliance-reports') }}/{{ item }}"
-        # CRÍTICO: Deshabilitar envío de correo individual - se enviará al final todos juntos
-        # Usamos una variable diferente para evitar conflictos de precedencia
+        # Deshabilitar envío de correo desde el rol; la entrega se hace por GitLab desde el orquestador
         send_email_from_role: false
       loop: "{{ target_clusters_list }}"
       loop_control:
@@ -154,7 +152,7 @@
       ignore_errors: true
 
     # ---------------------------------------------------------
-    # 7. ENVÍO CONSOLIDADO DE CORREOS (Todos los clusters juntos)
+    # 7. PUSH DE REPORTES A GITLAB (Clone -> Copiar -> Commit -> Push)
     # ---------------------------------------------------------
     - name: Buscar todos los ZIPs generados por cluster
       ansible.builtin.find:
@@ -163,96 +161,118 @@
         recurse: yes
         file_type: file
       register: all_zip_files
-      when: 
-        - do_send_email | bool
+      when:
+        - do_push_gitlab | bool
         - do_export_html | bool
         - target_clusters_list | length > 0
 
     - name: Construir lista de clusters procesados exitosamente
       ansible.builtin.set_fact:
         clusters_with_reports: "{{ all_zip_files.files | map(attribute='path') | map('regex_replace', '.*/([^/]+)/.*\\.zip$', '\\1') | list | unique }}"
-      when: 
-        - do_send_email | bool
+      when:
+        - do_push_gitlab | bool
         - all_zip_files is defined
         - all_zip_files.files | length > 0
 
-    - name: Normalizar email_to a lista (soporta múltiples destinatarios)
+    # URL con autenticación OAuth2 (token) para clone/push (no_log para no exponer token)
+    - name: Construir URL de repositorio GitLab con autenticación
       ansible.builtin.set_fact:
-        email_to_list: "{{ email_to.split(',') if email_to is string else (email_to if email_to is iterable and email_to is not string else [email_to]) }}"
+        gitlab_repo_url_auth: "{{ 'https://oauth2:' ~ gitlab_token ~ '@' ~ (gitlab_repo_url | regex_replace('^https://', '')) }}"
+      when: do_push_gitlab | bool
+      no_log: true
 
-    - name: Enviar correo consolidado con todos los reportes
-      community.general.mail:
-        host: "{{ email_smtp_host }}"
-        port: "{{ email_smtp_port | default(587) }}"
-        username: "{{ email_smtp_username }}"
-        password: "{{ email_smtp_password }}"
-        from: "{{ email_from }}"
-        to: "{{ email_to_list }}"
-        subject: "{{ email_subject_prefix }} - Reportes Multi-Cluster ({{ clusters_with_reports | default([]) | length }} clusters)"
-        timeout: "{{ email_smtp_timeout | default(60) }}"
-        body: |
-          Estimados,
-          
-          Se adjuntan los reportes de cumplimiento del estándar PCI DSS y CIS consolidados.
-          
-          RESUMEN DE PROCESAMIENTO
-          ==========================
-          Total de clusters procesados: {{ clusters_with_reports | default([]) | length }}
-          Clusters: {{ clusters_with_reports | default([]) | join(', ') }}
-          
-          DETALLE DE ARCHIVOS ADJUNTOS
-          ===============================
-          {% if clusters_with_reports is defined and clusters_with_reports | length > 0 %}
-          {% for cluster in clusters_with_reports %}
-          {% set cluster_zips = all_zip_files.files | selectattr('path', 'match', '.*/' + cluster + '/.*\\.zip$') | list %}
-          {% for zip_file in cluster_zips %}
-          • Cluster: {{ cluster }}
-            - Archivo: {{ zip_file.path.split('/')[-1] }}
-            - Tamaño: {{ ((zip_file.size | default(0)) / 1024 / 1024) | round(2) }} MB
-          
-          {% endfor %}
-          {% endfor %}
-          {% else %}
-          No se encontraron reportes generados.
-          {% endif %}
-          
-          📄 CONTENIDO DE CADA ZIP
-          =======================
-          Cada archivo ZIP contiene:
-          • Reportes detallados en formato HTML
-          • Resumen de ejecución (summary.txt)
-          
-          ℹ️  NOTA IMPORTANTE
-          ==================
-          Verifica el % de cumplimiento de los estándares en los archivos adjuntos, con base a esa revisión, aplica las remediaciones.
-          
-          Saludos,
-        attach: "{{ all_zip_files.files | map(attribute='path') | list }}"
-        secure: starttls
-      delegate_to: localhost
-      register: email_result
-      when: 
-        - do_send_email | bool
+    - name: Eliminar directorio de trabajo Git si existe (clone limpio)
+      ansible.builtin.file:
+        path: "{{ git_workdir }}"
+        state: absent
+      when: do_push_gitlab | bool
+
+    - name: Clonar repositorio GitLab
+      ansible.builtin.git:
+        repo: "{{ gitlab_repo_url_auth }}"
+        dest: "{{ git_workdir }}"
+        version: "{{ gitlab_repo_branch | default('main') }}"
+        force: true
+      when:
+        - do_push_gitlab | bool
         - all_zip_files is defined
         - all_zip_files.files | length > 0
-      ignore_errors: true
+      no_log: true
 
-    - name: Verificar resultado del envío de correo
+    - name: Crear directorio de reportes dentro del repo
+      ansible.builtin.file:
+        path: "{{ git_workdir }}/reports"
+        state: directory
+        mode: "0755"
+      when:
+        - do_push_gitlab | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+
+    - name: Copiar reportes ZIP al repositorio clonado
+      ansible.builtin.copy:
+        src: "{{ item.path }}"
+        dest: "{{ git_workdir }}/reports/{{ item.path | basename }}"
+        remote_src: true
+        mode: "0644"
+      loop: "{{ all_zip_files.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when:
+        - do_push_gitlab | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+
+    - name: Configurar usuario Git para commit
+      ansible.builtin.command:
+        cmd: git config user.name "{{ gitlab_user }}"
+        chdir: "{{ git_workdir }}"
+      when:
+        - do_push_gitlab | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+
+    - name: Configurar email Git para commit
+      ansible.builtin.command:
+        cmd: git config user.email "{{ gitlab_user | default('ansible-bot') }}@users.noreply.gitlab.com"
+        chdir: "{{ git_workdir }}"
+      when:
+        - do_push_gitlab | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+
+    - name: Añadir archivos y hacer commit
+      ansible.builtin.command:
+        cmd: >
+          git add reports/
+          && git commit -m "{{ gitlab_commit_message | default('Compliance reports - ' ~ (clusters_with_reports | default([]) | join(', ')) ~ ' - ' ~ ansible_date_time.iso8601) }}"
+        chdir: "{{ git_workdir }}"
+      register: git_commit_result
+      changed_when: "'nothing to commit' not in (git_commit_result.stderr | default(''))"
+      failed_when: git_commit_result.rc != 0 and 'nothing to commit' not in (git_commit_result.stderr | default(''))
+      when:
+        - do_push_gitlab | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+
+    - name: Push a GitLab
+      ansible.builtin.command:
+        cmd: git push origin "{{ gitlab_repo_branch | default('main') }}"
+        chdir: "{{ git_workdir }}"
+      when:
+        - do_push_gitlab | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+        - git_commit_result is defined
+        - git_commit_result.changed | default(false)
+      no_log: true
+
+    - name: Verificar resultado del push a GitLab
       ansible.builtin.debug:
-        msg: |
-          {% if email_result is defined and email_result.failed %}
-          El módulo de correo reportó un error, pero el correo puede haberse enviado correctamente.
-          Esto es común cuando se envían archivos grandes y el servidor SMTP cierra la conexión antes de confirmar.
-          Verifique su bandeja de entrada para confirmar la recepción.
-          Error técnico: {{ email_result.msg | default('Timeout o conexión cerrada') }}
-          {% elif email_result is defined and email_result.changed %}
-          Correo enviado exitosamente
-          {% else %}
-          Estado del envío desconocido
-          {% endif %}
-      when: 
-        - do_send_email | bool
-        - email_result is defined
+        msg: "Reportes subidos a GitLab correctamente. Repo: {{ gitlab_repo_url }} (branch {{ gitlab_repo_branch | default('main') }})"
+      when:
+        - do_push_gitlab | bool
+        - git_commit_result is defined
 
     # ---------------------------------------------------------
     # 8. RESUMEN FINAL
@@ -261,8 +281,8 @@
       ansible.builtin.debug:
         msg: |
           Los reportes se han guardado en: {{ export_output_dir }}/<nombre-cluster>/
-          {% if do_send_email | bool and all_zip_files is defined and all_zip_files.files | length > 0 %}
-          Correo consolidado enviado con {{ all_zip_files.files | length }} archivo(s) de {{ clusters_with_reports | default([]) | length }} cluster(s)
-          {% elif do_send_email | bool %}
-          No se encontraron reportes para enviar por correo
+          {% if do_push_gitlab | bool and all_zip_files is defined and all_zip_files.files | length > 0 %}
+          Reportes subidos a GitLab: {{ gitlab_repo_url }} ({{ all_zip_files.files | length }} archivo(s) de {{ clusters_with_reports | default([]) | length }} cluster(s))
+          {% elif do_push_gitlab | bool %}
+          No se encontraron reportes para subir a GitLab
           {% endif %}
