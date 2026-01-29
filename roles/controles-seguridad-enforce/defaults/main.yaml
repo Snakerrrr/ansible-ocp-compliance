@@ -1,8 +1,6 @@
-# Configuración de Correo
-send_mail: true
-smtp_host: "smtp.gmail.com"
-
-# Reporte
+# Reporte local
 report_dir: "/tmp/ocp-reports"
 report_file: "reporte-seguridad-{{ lookup('pipe', 'date +%Y%m%d') }}"
 date: "{{ lookup('pipe', 'date +%Y%m%d-%H%M') }}"
+
+# Subida a GitLab: usar do_push_gitlab, gitlab_repo_url, gitlab_token, gitlab_user, git_workdir, gitlab_repo_branch (mismas que orquestador)

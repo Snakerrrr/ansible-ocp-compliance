@@ -1,24 +1,92 @@
 ---
-- name: "[REPORT] Crear directorio y Guardar TXT"
+# Generar reporte local (sin correo)
+- name: "[REPORT] Crear directorio y guardar reporte TXT"
   block:
     - ansible.builtin.file: { path: "{{ report_dir }}", state: directory }
     - ansible.builtin.template:
         src: report_final.j2
         dest: "{{ report_dir }}/{{ report_file }}.txt"
 
-- name: "[REPORT] Normalizar credenciales desde Environment Variables"
+# --- Subida a GitLab (reportes_controles_seguridad/<cluster>/) ---
+- name: "[REPORT] Normalizar credenciales GitLab desde Environment Variables"
   ansible.builtin.set_fact:
-    email_smtp_password: "{{ lookup('env', 'EMAIL_SMTP_PASSWORD') | default(email_smtp_password | default('')) }}"
-  when: send_mail | bool
+    gitlab_token: "{{ lookup('env', 'GITLAB_TOKEN') | default(gitlab_token | default('')) }}"
+    gitlab_user: "{{ lookup('env', 'GITLAB_USER') | default(gitlab_user | default('')) }}"
+    target_cluster_folder: "{{ cluster_name | default(inventory_hostname) }}"
+  when: do_push_gitlab | default(false) | bool
 
-- name: "[REPORT] Enviar por correo"
-  community.general.mail:
-    host: "{{ smtp_host }}"
-    username: "{{ mail_from }}"
-    password: "{{ email_smtp_password }}"
-    port: 587
-    to: "{{ mail_to }}"
-    subject: "Reporte Seguridad OpenShift - {{ cluster_name }} - {{date}}"
-    body: "{{ lookup('file', report_dir + '/' + report_file + '.txt') }}"
-    attach: "{{ report_dir }}/{{ report_file }}.txt"
-  when: send_mail | bool
+- name: "[REPORT] Construir URL de repositorio GitLab con autenticación"
+  ansible.builtin.set_fact:
+    gitlab_repo_url_auth: "{{ 'https://oauth2:' ~ gitlab_token ~ '@' ~ (gitlab_repo_url | regex_replace('^https://', '')) }}"
+  when: do_push_gitlab | default(false) | bool
+  no_log: true
+
+- name: "[REPORT] Eliminar directorio de trabajo Git si existe (clone limpio)"
+  ansible.builtin.file:
+    path: "{{ git_workdir | default('/tmp/controles-seguridad-git') }}"
+    state: absent
+  when: do_push_gitlab | default(false) | bool
+
+- name: "[REPORT] Clonar repositorio GitLab"
+  ansible.builtin.git:
+    repo: "{{ gitlab_repo_url_auth }}"
+    dest: "{{ git_workdir | default('/tmp/controles-seguridad-git') }}"
+    version: "{{ gitlab_repo_branch | default('main') }}"
+    force: true
+  when: do_push_gitlab | default(false) | bool
+  no_log: true
+
+- name: "[REPORT] Crear carpeta raíz y subcarpeta por cluster en repo"
+  ansible.builtin.file:
+    path: "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ target_cluster_folder }}"
+    state: directory
+    mode: "0755"
+  when: do_push_gitlab | default(false) | bool
+
+- name: "[REPORT] Copiar reporte al repo (resultado_enforce_<timestamp>.txt)"
+  ansible.builtin.copy:
+    src: "{{ report_dir }}/{{ report_file }}.txt"
+    dest: "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ target_cluster_folder }}/resultado_enforce_{{ ansible_date_time.iso8601 | regex_replace(':', '-') }}.txt"
+    remote_src: false
+    mode: "0644"
+  when: do_push_gitlab | default(false) | bool
+
+- name: "[REPORT] Aplicar política de retención (mantener solo 5 archivos más recientes)"
+  ansible.builtin.shell: |
+    set -e
+    cd "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ target_cluster_folder }}"
+    ls -tp 2>/dev/null | grep -v '/$' | tail -n +6 | xargs -I {} rm -- {} 2>/dev/null || true
+  args:
+    chdir: "{{ git_workdir | default('/tmp/controles-seguridad-git') }}"
+  when: do_push_gitlab | default(false) | bool
+
+- name: "[REPORT] Configurar usuario y email Git"
+  ansible.builtin.shell: >-
+    git config user.name "{{ gitlab_user }}"
+    && git config user.email "{{ gitlab_user | default('ansible-bot') }}@users.noreply.gitlab.com"
+  args:
+    chdir: "{{ git_workdir | default('/tmp/controles-seguridad-git') }}"
+  when: do_push_gitlab | default(false) | bool
+
+- name: "[REPORT] Añadir archivos y hacer commit"
+  ansible.builtin.shell: >-
+    git add reportes_controles_seguridad/
+    && git commit -m "Reporte enforce - {{ target_cluster_folder }} - {{ ansible_date_time.iso8601 }}"
+  args:
+    chdir: "{{ git_workdir | default('/tmp/controles-seguridad-git') }}"
+  register: git_commit_result
+  changed_when: "'nothing to commit' not in ((git_commit_result.stderr | default('')) ~ (git_commit_result.stdout | default('')))"
+  failed_when: >
+    git_commit_result.rc != 0
+    and 'nothing to commit' not in ((git_commit_result.stderr | default('')) ~ (git_commit_result.stdout | default('')))
+  when: do_push_gitlab | default(false) | bool
+
+- name: "[REPORT] Push a GitLab"
+  ansible.builtin.shell: git push origin "{{ gitlab_repo_branch | default('main') }}"
+  args:
+    chdir: "{{ git_workdir | default('/tmp/controles-seguridad-git') }}"
+  when:
+    - do_push_gitlab | default(false) | bool
+    - git_commit_result is defined
+    - git_commit_result.changed | default(false)
+  no_log: true
