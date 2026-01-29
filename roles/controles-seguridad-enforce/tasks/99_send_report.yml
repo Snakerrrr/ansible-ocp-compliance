@@ -17,7 +17,7 @@
   ansible.builtin.set_fact:
     gitlab_token: "{{ lookup('env', 'GITLAB_TOKEN') | default(gitlab_token | default('')) }}"
     gitlab_user: "{{ lookup('env', 'GITLAB_USER') | default(gitlab_user | default('')) }}"
-    cluster_report_dir: "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ inventory_hostname }}"
+    cluster_report_dir: "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ item | default('cluster_desconocido') }}"
   when: do_push_gitlab | default(false) | bool
 
 - name: "[REPORT] Construir URL de repositorio GitLab con autenticación"
@@ -41,7 +41,7 @@
   when: do_push_gitlab | default(false) | bool
   no_log: true
 
-- name: "[REPORT] Crear árbol de directorios (reportes_controles_seguridad/{{ inventory_hostname }})"
+- name: "[REPORT] Crear árbol de directorios (reportes_controles_seguridad/{{ item | default('cluster_desconocido') }})"
   ansible.builtin.file:
     path: "{{ cluster_report_dir }}"
     state: directory
@@ -77,7 +77,7 @@
 - name: "[REPORT] Añadir archivos y hacer commit"
   ansible.builtin.shell: >-
     git add reportes_controles_seguridad/
-    && git commit -m "Reporte enforce - {{ inventory_hostname }} - {{ current_timestamp }}"
+    && git commit -m "Reporte enforce - {{ item | default('cluster_desconocido') }} - {{ current_timestamp }}"
   args:
     chdir: "{{ git_workdir | default('/tmp/controles-seguridad-git') }}"
   register: git_commit_result
