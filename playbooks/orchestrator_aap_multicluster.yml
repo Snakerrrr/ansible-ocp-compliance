@@ -137,8 +137,6 @@
         managed_cluster_name: "{{ item }}"
         # Mapear export_output_dir del playbook a compliance_reports_path del rol
         compliance_reports_path: "{{ export_output_dir | default('/tmp/compliance-reports') }}/{{ item }}"
-        # Deshabilitar envío de correo desde el rol; la entrega se hace por GitLab desde el orquestador
-        send_email_from_role: false
       loop: "{{ target_clusters_list }}"
       loop_control:
         loop_var: item

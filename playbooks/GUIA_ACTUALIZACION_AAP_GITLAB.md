@@ -70,3 +70,33 @@ Crear en el **Job Template** (Extra Variables o Survey) las siguientes variables
 2. Añadir variables y Surveys de GitLab (`do_push_gitlab`, `gitlab_repo_url`, `gitlab_user`, `git_workdir`, etc.).
 3. Quitar credencial de Correo del Job Template; asociar credencial que aporte `gitlab_token` (o inyecte `GITLAB_TOKEN` / `GITLAB_USER`).
 4. Probar el Job Template con `do_push_gitlab=true` y revisar que los reportes aparezcan en el repo en la ruta `reports/`.
+
+---
+
+## 5. Cambios en el rol `compliance_export_html`
+
+El rol **sí impactaba** la ejecución cuando se dejaba la lógica de correo: el debug y la tarea de correo usaban variables (`do_send_email`, `email_to`, `email_smtp_*`, etc.) que ya no existen en el orquestador, lo que podía provocar errores de **variable indefinida** al ejecutar el playbook.
+
+### Qué hace el rol (sin cambios, necesario para GitLab)
+
+- Conexión al cluster (kubeconfig, ACM, PVCs).
+- Búsqueda y procesamiento de PVCs de compliance (CIS/PCI).
+- Descompresión de `.bzip2`, aplanado de XMLs.
+- **Conversión XML → HTML** (script `render_reports.sh`).
+- Generación de `summary.txt`.
+- **Creación del ZIP** con los HTML y el resumen en `compliance_reports_path`.
+
+Ese flujo es el que genera los ZIPs que el orquestador luego recoge y sube a GitLab. No se ha tocado.
+
+### Qué se modificó en el rol
+
+| Ubicación | Cambio |
+|-----------|--------|
+| `roles/compliance_export_html/tasks/main.yml` | **Eliminada** la tarea "Enviar reporte de Compliance (ZIP) por correo electrónico" (`community.general.mail`). |
+| `roles/compliance_export_html/tasks/main.yml` | **Sustituido** el debug "Estado previo al correo" (que usaba `do_send_email`, `email_to`) por un debug neutro que solo muestra ruta de reportes y cluster. |
+| `roles/compliance_export_html/defaults/main.yml` | Comentario actualizado: la entrega la hace el orquestador (GitLab). |
+
+### Resumen
+
+- **No** hay que cambiar nada en AAP por el rol: las variables que se quitan/agregan son las del orquestador (secciones 1–4 de esta guía).
+- El rol ya **no** referencia correo ni variables SMTP; solo genera el ZIP. La entrega es **solo** en el orquestador vía GitLab.

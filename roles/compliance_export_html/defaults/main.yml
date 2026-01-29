@@ -5,5 +5,5 @@
 compliance_reports_path: "/tmp/compliance-reports"
 
 compliance_report_html_name: "compliance-report.html"
-# email_to viene del exterior
+# Entrega de reportes: el orquestador (orchestrator_aap_multicluster.yml) sube los ZIPs a GitLab.
 

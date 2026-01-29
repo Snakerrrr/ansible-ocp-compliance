@@ -504,16 +504,15 @@
     pci_pvcs: "{{ pci_pvcs }}"
     compliance_reports_path: "{{ compliance_reports_path }}"
 
-# --- VERIFICACIÓN DE DEBUG (Para saber por qué no llega el correo) ---
-- name: DEBUG - Estado previo al correo
+# --- DEBUG: Ubicación del reporte (entrega la hace el orquestador vía GitLab) ---
+- name: DEBUG - Reporte generado (ZIP listo para orquestador/GitLab)
   ansible.builtin.debug:
     msg:
-      - "Variable do_send_email: {{ do_send_email }}"
-      - "Variable email_to: {{ email_to }}"
       - "Ruta de reportes: {{ compliance_reports_path }}"
       - "Cluster context: {{ target_cluster_context | default(inventory_hostname) }}"
+      - "El orquestador consolidará los ZIPs y los subirá a GitLab si do_push_gitlab está activo."
 
-# --- EMPAQUETADO (Solución para evitar límite de tamaño de Gmail) ---
+# --- EMPAQUETADO (ZIP para uso por orquestador o descarga local) ---
 
 - name: Buscar archivos HTML y summary para comprimir
   ansible.builtin.find:
@@ -536,37 +535,6 @@
     - files_to_zip is defined
     - files_to_zip.files | length > 0
 
-# --- ENVÍO DE CORREO OPTIMIZADO ---
-
-- name: Enviar reporte de Compliance (ZIP) por correo electrónico
-  community.general.mail:
-    host: "{{ email_smtp_host }}"
-    port: "{{ email_smtp_port }}"
-    username: "{{ email_smtp_username }}"
-    password: "{{ email_smtp_password }}"
-    from: "{{ email_from }}"
-    to: "{{ email_to }}"
-    subject: "{{ email_subject_prefix }} - Cluster: {{ target_cluster_context | default(inventory_hostname) }} (Reporte Completo)"
-    body: |
-      Hola,
-      
-      Se adjunta el reporte de cumplimiento consolidado.
-      
-      Contenido del ZIP:
-      - Reportes detallados en formato HTML ({{ files_to_zip.files | selectattr('path', 'match', '.*\\.html$') | list | length }} archivos).
-      - Resumen de ejecución (summary.txt).
-      
-      Nota: Los archivos XML crudos permanecen en el servidor para auditoría si fueran necesarios.
-      
-      Saludos,
-      Equipo de Automatización.
-    # ADJUNTAMOS SOLO EL ZIP
-    attach:
-      - "{{ zip_creation.dest }}"
-    secure: starttls
-  delegate_to: localhost
-  when: 
-    - (do_send_email | default(false) | bool) and (send_email_from_role | default(true) | bool)
-    - zip_creation is defined
-    - zip_creation.state == 'file'
-  ignore_errors: true # Para ver el error SMTP si falla la contraseña
+# --- ENTREGA DE REPORTES ---
+# La entrega (GitLab push) se realiza en el orquestador (orchestrator_aap_multicluster.yml).
+# Este rol solo genera el ZIP en compliance_reports_path; el orquestador lo recoge y sube al repo.
