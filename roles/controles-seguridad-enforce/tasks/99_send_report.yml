@@ -12,12 +12,12 @@
         src: report_final.j2
         dest: "{{ report_dir }}/{{ report_file }}.txt"
 
-# --- Subida a GitLab (reportes_controles_seguridad/<cluster>/) ---
+# --- Subida a GitLab (reportes_controles_seguridad/<inventory_hostname>/) ---
 - name: "[REPORT] Normalizar credenciales GitLab desde Environment Variables"
   ansible.builtin.set_fact:
     gitlab_token: "{{ lookup('env', 'GITLAB_TOKEN') | default(gitlab_token | default('')) }}"
     gitlab_user: "{{ lookup('env', 'GITLAB_USER') | default(gitlab_user | default('')) }}"
-    target_cluster_folder: "{{ cluster_name | default(inventory_hostname) }}"
+    cluster_report_dir: "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ inventory_hostname }}"
   when: do_push_gitlab | default(false) | bool
 
 - name: "[REPORT] Construir URL de repositorio GitLab con autenticación"
@@ -41,25 +41,26 @@
   when: do_push_gitlab | default(false) | bool
   no_log: true
 
-- name: "[REPORT] Crear carpeta raíz y subcarpeta por cluster en repo"
+- name: "[REPORT] Crear árbol de directorios (reportes_controles_seguridad/{{ inventory_hostname }})"
   ansible.builtin.file:
-    path: "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ target_cluster_folder }}"
+    path: "{{ cluster_report_dir }}"
     state: directory
     mode: "0755"
+    recurse: yes
   when: do_push_gitlab | default(false) | bool
 
 - name: "[REPORT] Copiar reporte al repo (resultado_enforce_<timestamp>.txt)"
   ansible.builtin.copy:
     src: "{{ report_dir }}/{{ report_file }}.txt"
-    dest: "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ target_cluster_folder }}/resultado_enforce_{{ current_timestamp | regex_replace(':', '-') }}.txt"
+    dest: "{{ cluster_report_dir }}/resultado_enforce_{{ current_timestamp | regex_replace(':', '-') }}.txt"
     remote_src: false
     mode: "0644"
   when: do_push_gitlab | default(false) | bool
 
-- name: "[REPORT] Aplicar política de retención (mantener solo 5 archivos más recientes)"
+- name: "[REPORT] Aplicar política de retención (solo en {{ cluster_report_dir }}, mantener 5 más recientes)"
   ansible.builtin.shell: |
     set -e
-    cd "{{ (git_workdir | default('/tmp/controles-seguridad-git')) }}/reportes_controles_seguridad/{{ target_cluster_folder }}"
+    cd "{{ cluster_report_dir }}"
     ls -tp 2>/dev/null | grep -v '/$' | tail -n +6 | xargs -I {} rm -- {} 2>/dev/null || true
   args:
     chdir: "{{ git_workdir | default('/tmp/controles-seguridad-git') }}"
@@ -76,7 +77,7 @@
 - name: "[REPORT] Añadir archivos y hacer commit"
   ansible.builtin.shell: >-
     git add reportes_controles_seguridad/
-    && git commit -m "Reporte enforce - {{ target_cluster_folder }} - {{ current_timestamp }}"
+    && git commit -m "Reporte enforce - {{ inventory_hostname }} - {{ current_timestamp }}"
   args:
     chdir: "{{ git_workdir | default('/tmp/controles-seguridad-git') }}"
   register: git_commit_result
