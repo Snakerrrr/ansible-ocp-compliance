@@ -77,20 +77,20 @@
 # --- Configurar Git y hacer commit + push (robusto ante "nada que commitear") ---
 - name: "[REPORT] Añadir archivos, commit y push a GitLab"
   ansible.builtin.shell: |
-    # 1. Configurar identidad (necesario para commit)
+    # 1. Configurar identidad
     git config user.email "ansible-bot@example.com"
     git config user.name "Ansible Bot"
 
     # 2. Añadir cambios
     git add .
 
-    # 3. Commit seguro (Si no hay cambios, no falla)
+    # 3. Commit (Usando fecha de sistema Linux para evitar error de variables)
     if git diff --staged --quiet; then
       echo "NO_CHANGES: No hay cambios para commitear."
     else
-      git commit -m "Reporte Inform - {{ target_cluster_name | default('cluster_undefined') }} - {{ ansible_date_time.iso8601 }}"
+      git commit -m "Reporte Inform - {{ target_cluster_name | default('unknown') }} - $(date +%Y-%m-%d_%H:%M:%S)"
 
-      # 4. Push (Solo si hubo commit)
+      # 4. Push
       git push origin HEAD
     fi
   args:
