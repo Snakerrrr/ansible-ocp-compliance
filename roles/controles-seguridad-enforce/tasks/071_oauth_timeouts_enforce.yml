@@ -3,6 +3,7 @@
   kubernetes.core.k8s_info:
     api_version: "{{ item.api }}"
     kind: "{{ item.kind }}"
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   loop:
     - { api: "config.openshift.io/v1", kind: "OAuth" }
     - { api: "oauth.openshift.io/v1", kind: "OAuthClient" }
@@ -28,6 +29,7 @@
         kind: OAuth
         name: cluster
         definition: { spec: { tokenConfig: { accessTokenInactivityTimeout: "10m0s" } } }
+        kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
       register: global_patch_res
 
     - name: "Parchear OAuthClients seleccionados (600s)"
@@ -37,6 +39,7 @@
         kind: OAuthClient
         name: "{{ item.metadata.name }}"
         definition: { accessTokenInactivityTimeoutSeconds: 600 }
+        kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
       loop: "{{ oauth_res.results[1].resources }}"
       when: >
         (oauth_client | default('ALL') | trim | upper == 'ALL') or 

@@ -3,6 +3,7 @@
   kubernetes.core.k8s_info:
     api_version: "{{ item.api }}"
     kind: "{{ item.kind }}"
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   loop:
     - { api: "v1", kind: "Namespace" }
     - { api: "networking.k8s.io/v1", kind: "NetworkPolicy" }

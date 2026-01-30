@@ -6,6 +6,7 @@
     api_version: v1
     kind: Namespace
     name: stackrox
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: ns_stackrox
 
 - name: Chequear Deployment del Sensor en stackrox
@@ -14,6 +15,7 @@
     kind: Deployment
     name: sensor
     namespace: stackrox
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: sensor_deploy
   when: ns_stackrox.resources | length > 0
   

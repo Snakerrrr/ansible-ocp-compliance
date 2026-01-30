@@ -3,6 +3,7 @@
   kubernetes.core.k8s_info:
     api_version: "{{ item.api }}"
     kind: "{{ item.kind }}"
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   loop:
     - { api: "config.openshift.io/v1", kind: "OAuth" }       # results[0]
     - { api: "oauth.openshift.io/v1", kind: "OAuthClient" } # results[1]

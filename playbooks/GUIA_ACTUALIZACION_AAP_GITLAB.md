@@ -100,3 +100,68 @@ Ese flujo es el que genera los ZIPs que el orquestador luego recoge y sube a Git
 
 - **No** hay que cambiar nada en AAP por el rol: las variables que se quitan/agregan son las del orquestador (secciones 1–4 de esta guía).
 - El rol ya **no** referencia correo ni variables SMTP; solo genera el ZIP. La entrega es **solo** en el orquestador vía GitLab.
+
+---
+
+## 6. AAP: Survey (clusters), credenciales HUB y Git
+
+### Survey y variable `survey_target_clusters`
+
+- **Orquestador** (`orchestrator_aap_multicluster.yml`): usa **`survey_target_clusters`** para saber en qué clusters ejecutar (GitOps, export HTML, push GitLab). La Survey que tienes con “clusters a ejecutar” y esa variable es la correcta; **manténla**.
+- **Playbooks Enforce / Inform** (`enforce.yaml`, `inform.yaml`): los roles reciben **`target_clusters_list`** (lista) y **iteran ellos mismos** sobre cada cluster. Los playbooks construyen esa lista desde **`survey_target_clusters`** (misma variable que el orquestador). Así puedes usar **la misma pregunta de Survey** en los Job Templates de Enforce e Inform.
+
+---
+
+## 7. Qué modificar o agregar en AAP para que Enforce/Inform funcionen
+
+Checklist para que los Job Templates que ejecutan **enforce.yaml** o **inform.yaml** funcionen con la lista de clusters y la conexión Hub-to-Spoke.
+
+### 1. Survey (recomendado)
+
+Puedes usar **Multiple choice (multi-select)** para que el usuario elija en qué clusters ejecutar.
+
+| Opción | Cómo configurarlo |
+|--------|--------------------|
+| **Multiple choice (multi-select)** | En la Survey del Job Template, crea una pregunta con **variable:** `survey_target_clusters`. **Tipo:** "Multiple choice (multi-select)". En **Answer type:** elige "Select multiple". En **Choices** escribe cada cluster como una línea (ej.: `cluster-a`, `cluster-b`, `cluster-c`). AAP enviará la selección como lista; los playbooks la aceptan tal cual. |
+| **Text / Textarea** | **Variable:** `survey_target_clusters`. **Tipo:** Text o Textarea. Formato: un cluster por línea, o separados por comas. Los playbooks convierten texto (saltos de línea o comas) en lista. |
+
+| Campo | Valor |
+|--------|--------|
+| **Variable** | `survey_target_clusters` (igual que en el orquestador). |
+| **Descripción sugerida** | “Selecciona los clusters en los que ejecutar (o escribe uno por línea / separados por comas). Debe coincidir con el nombre del namespace del cluster en el Hub ACM.” |
+| **Obligatoria** | Opcional: si no se selecciona nada, el job hace 0 iteraciones (no falla). |
+
+**Recomendación:** Usar **Multiple choice (multi-select)** con la lista de clusters en Choices da mejor experiencia: el usuario solo marca los clusters deseados y AAP envía la lista correcta.
+
+### 2. Extra Variables (alternativa a Survey)
+
+Si no usas Survey, pasa los clusters por **Extra Variables** del Job Template:
+
+- **Opción A:** `survey_target_clusters` como texto, un cluster por línea. Ejemplo en YAML:  
+  `survey_target_clusters: "cluster-a\ncluster-b\ncluster-c"`
+- **Opción B:** Si tu AAP permite pasar listas en Extra Variables, puedes definir:  
+  `target_clusters_list: ["cluster-a", "cluster-b"]`  
+  En ese caso, como los playbooks definen `target_clusters_list` desde `survey_target_clusters`, si pasas `target_clusters_list` por Extra Variables puede tener prioridad (depende de AAP); si no, usa la Opción A.
+
+### 3. Credenciales
+
+| Credencial | Dónde | Acción |
+|------------|--------|--------|
+| **HUB ACM** (OpenShift/Kubernetes o Kubeconfig) | Job Template de Enforce y Job Template de Inform | **Añadir / vincular.** El playbook necesita conectarse al Hub para ejecutar `oc get secret admin-kubeconfig -n <cluster>`. Sin esta credencial, la extracción del kubeconfig del spoke fallará. |
+| **Git (Source Control)** | Proyecto del Job Template | Mantener si el Proyecto obtiene el código desde un repo Git. No es necesaria para la lógica de clusters ni para GitOps. |
+
+### 4. Playbook e inventario
+
+| Campo | Valor |
+|--------|--------|
+| **Playbook** | `enforce.yaml` o `inform.yaml` según el Job Template. |
+| **Inventario** | Puede ser un inventario con un único host (p. ej. `localhost`) o el que use el orquestador. Los playbooks están configurados con `hosts: localhost` para que todo se ejecute en el nodo que tiene acceso al Hub. |
+
+### 5. Resumen rápido (Enforce/Inform en AAP)
+
+1. **Survey o Extra Variables:** variable `survey_target_clusters`. Puedes usar **Multiple choice (multi-select)** en la Survey (recomendado) o Text/Textarea (un cluster por línea o separados por comas). También puedes pasar `target_clusters_list` como lista por Extra Variables.
+2. **Credencial HUB ACM:** vinculada a los Job Templates de Enforce e Inform.
+3. **Credencial Git:** en el Proyecto, si el código se clona desde Git.
+4. **Playbook:** `enforce.yaml` o `inform.yaml`; `hosts: localhost` ya está en el playbook.
+
+Con esto, al lanzar el job se procesarán todos los clusters que indiques en `survey_target_clusters` (o en `target_clusters_list`) en una sola ejecución.

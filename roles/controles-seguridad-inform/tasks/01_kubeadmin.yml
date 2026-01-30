@@ -5,6 +5,7 @@
     kind: "{{ item.kind }}"
     name: "{{ item.name | default(omit) }}"
     namespace: "{{ item.ns | default(omit) }}"
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   loop:
     - { api: "v1", kind: "Secret", name: "kubeadmin", ns: "kube-system" }
     - { api: "config.openshift.io/v1", kind: "OAuth", name: "cluster" }

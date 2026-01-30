@@ -1,0 +1,9 @@
+---
+- name: Iterar sobre la lista de clusters seleccionados
+  ansible.builtin.include_tasks: process_cluster.yml
+  loop: "{{ target_clusters_list | default([]) }}"
+  loop_control:
+    loop_var: item
+    label: "{{ item }}"
+  vars:
+    target_cluster_name: "{{ item }}"

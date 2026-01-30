@@ -1,6 +1,10 @@
 ---
+# Los roles esperan target_clusters_list (lista). Se deriva de survey_target_clusters.
+# Acepta: lista (multi-select en Survey), texto con saltos de línea o comas.
 - name: Controles de seguridad - Inform
-  hosts: all
+  hosts: localhost
   gather_facts: false
+  vars:
+    target_clusters_list: "{{ ((survey_target_clusters | replace(',', '\n')).split('\n') | map('trim') | reject('equalto', '') | list) if (survey_target_clusters is defined and survey_target_clusters is string) else (survey_target_clusters if survey_target_clusters is defined else []) }}"
   roles:
     - controles-seguridad-inform

@@ -3,11 +3,13 @@
   kubernetes.core.k8s_info:
     api_version: compliance.openshift.io/v1alpha1
     kind: ComplianceRemediation
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: rem_res
 
 - name: "[REMEDY-ENFORCE] Aplicar remediaciones de Compliance Operator"
   kubernetes.core.k8s:
     state: present
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
     definition:
       apiVersion: compliance.openshift.io/v1alpha1
       kind: ComplianceRemediation
@@ -30,6 +32,7 @@
   kubernetes.core.k8s_info:
     api_version: compliance.openshift.io/v1alpha1
     kind: ComplianceRemediation
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: rem_res
 
 - name: "[REMEDY-INFORM] Formatear reporte de remediaciones detectadas"

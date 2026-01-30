@@ -3,6 +3,7 @@
     api_version: logging.openshift.io/v1
     kind: ClusterLogForwarder
     namespace: openshift-logging
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: clf_info
 
 - name: "[LOGS] Procesar resultado"

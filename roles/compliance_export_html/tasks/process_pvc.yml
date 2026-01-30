@@ -26,42 +26,6 @@
   ignore_errors: true
   environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
 
-# --- DEBUG: Diagnóstico del entorno del pod antes de copiar ---
-- name: "[DEBUG] Listar contenido del directorio /results en el pod"
-  ansible.builtin.shell: oc exec -n openshift-compliance {{ pod_name }} -c extractor {{ oc_context_arg | default('') }} -- ls -la /results
-  register: debug_ls_results
-  ignore_errors: true
-  environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
-
-- name: "[DEBUG] Verificar binario TAR en la imagen del pod"
-  ansible.builtin.shell: oc exec -n openshift-compliance {{ pod_name }} -c extractor {{ oc_context_arg | default('') }} -- tar --version
-  register: debug_tar_version
-  ignore_errors: true
-  environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
-
-- name: "[DEBUG] Verificar si existe bash en el pod"
-  ansible.builtin.shell: oc exec -n openshift-compliance {{ pod_name }} -c extractor {{ oc_context_arg | default('') }} -- which bash
-  register: debug_which_bash
-  ignore_errors: true
-  environment: "{{ {'KUBECONFIG': managed_cluster_kubeconfig_path} if (managed_cluster_kubeconfig_path | default('') != '') else {} }}"
-
-- name: "[DEBUG] Salida del diagnóstico del pod (para diagnosticar fallos de oc cp/oc exec)"
-  ansible.builtin.debug:
-    msg: |
-      Pod: {{ pod_name }} (namespace openshift-compliance, container extractor)
-      --- ls -la /results ---
-      rc: {{ debug_ls_results.rc | default('N/A') }}
-      stdout: {{ debug_ls_results.stdout | default('') }}
-      stderr: {{ debug_ls_results.stderr | default('') }}
-      --- tar --version ---
-      rc: {{ debug_tar_version.rc | default('N/A') }}
-      stdout: {{ debug_tar_version.stdout | default('') }}
-      stderr: {{ debug_tar_version.stderr | default('') }}
-      --- which bash ---
-      rc: {{ debug_which_bash.rc | default('N/A') }}
-      stdout: {{ debug_which_bash.stdout | default('') }}
-      stderr: {{ debug_which_bash.stderr | default('') }}
-
 - name: Crear directorio de destino en el bastión
   ansible.builtin.file:
     path: "{{ compliance_reports_path }}/{{ pvc_name }}"
