@@ -77,24 +77,28 @@
 # --- Configurar Git y hacer commit + push (robusto ante "nada que commitear") ---
 - name: "[REPORT] Añadir archivos, commit y push a GitLab"
   ansible.builtin.shell: |
-    # 1. Configurar identidad local (necesario en entornos efímeros)
-    git config user.email "{{ gitlab_user | default('ansible-bot') }}@users.noreply.gitlab.com"
-    git config user.name "{{ gitlab_user | default('Ansible Automation') }}"
+    # 1. Configurar identidad (necesario para commit)
+    git config user.email "ansible-bot@example.com"
+    git config user.name "Ansible Bot"
 
     # 2. Añadir cambios
     git add .
 
-    # 3. Commit (|| true para no fallar si no hay cambios)
-    git commit -m "Reporte Inform - {{ target_cluster_name | default('cluster_undefined') }} - {{ ansible_date_time.iso8601 }}" || echo "No hay cambios nuevos para commitear"
+    # 3. Commit seguro (Si no hay cambios, no falla)
+    if git diff --staged --quiet; then
+      echo "NO_CHANGES: No hay cambios para commitear."
+    else
+      git commit -m "Reporte Inform - {{ target_cluster_name | default('cluster_undefined') }} - {{ ansible_date_time.iso8601 }}"
 
-    # 4. Push
-    git push origin {{ gitlab_repo_branch | default('main') }}
+      # 4. Push (Solo si hubo commit)
+      git push origin HEAD
+    fi
   args:
     chdir: "{{ git_workdir }}"
   environment:
     GIT_TERMINAL_PROMPT: "0"
   register: git_push_result
-  changed_when: "'No hay cambios' not in (git_push_result.stdout | default(''))"
+  changed_when: "'NO_CHANGES' not in git_push_result.stdout"
   when: git_workdir is defined and gitlab_repo_url is defined
   delegate_to: localhost
-  no_log: true
+  no_log: false
