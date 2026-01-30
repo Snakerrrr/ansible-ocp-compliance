@@ -14,7 +14,8 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
   - **Inform**: Revisión y reporte de controles de seguridad (kubeadmin, logs, ingress, LDAP, ACS, network policies, OAuth, remediaciones)
   - **Enforce**: Aplicación automática de remediaciones y configuración de controles (OAuth timeouts, ComplianceRemediations)
 - **Multi-cluster**: Soporte para ejecución en múltiples clusters gestionados desde un Hub
-- **Envío de Reportes**: Envío consolidado de reportes por correo electrónico (soporta múltiples destinatarios)
+- **Entrega de Reportes**: Push de reportes a GitLab (orquestador y roles Inform/Enforce suben ZIPs y reportes TXT al repositorio)
+- **Conexión Hub-to-Spoke**: Los roles de controles de seguridad obtienen el kubeconfig del managed cluster desde el Hub (secret `admin-kubeconfig`) y ejecutan las tareas contra cada spoke
 - **100% Agnóstico**: Sin valores hardcodeados, todas las variables se inyectan desde AAP
 - **Mejores Prácticas**: Todos los módulos de Ansible utilizan FQDN (Fully Qualified Domain Names) para mayor claridad y compatibilidad
 
@@ -58,17 +59,19 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
 │   │   ├── defaults/
 │   │   │   └── main.yaml                   # Variables por defecto del rol
 │   │   ├── tasks/
-│   │   │   ├── main.yaml                   # Tareas principales de enforce
+│   │   │   ├── main.yml                    # Entrada: iteración sobre target_clusters_list
+│   │   │   ├── process_cluster.yml         # Lógica por cluster (Hub-to-Spoke, enforce, reporte)
 │   │   │   ├── remediaciones_automaticas_enforce.yaml  # Aplicación de ComplianceRemediations
 │   │   │   ├── 071_oauth_timeouts_enforce.yml         # Configuración de timeouts OAuth
-│   │   │   └── 99_send_report.yml          # Generación y envío de reportes
+│   │   │   └── 99_send_report.yml          # Generación de reporte y push a GitLab
 │   │   └── templates/
 │   │       └── report_final.j2             # Template de reporte final
 │   └── controles-seguridad-inform/         # Información sobre controles de seguridad (inform)
 │       ├── defaults/
 │       │   └── main.yaml                   # Variables por defecto del rol
 │       ├── tasks/
-│       │   ├── main.yaml                   # Tareas principales de inform
+│       │   ├── main.yml                    # Entrada: iteración sobre target_clusters_list
+│       │   ├── process_cluster.yml         # Lógica por cluster (Hub-to-Spoke, inform, reporte)
 │       │   ├── 01_kubeadmin.yml            # Revisión de kubeadmin
 │       │   ├── 02_log_forwarder.yml         # Revisión de log forwarder
 │       │   ├── 03_ingress_tls.yml          # Revisión de TLS en ingress
@@ -131,7 +134,7 @@ El Execution Environment debe incluir las siguientes dependencias:
 
 - `kubernetes.core` - Para operaciones con Kubernetes/OpenShift
 - `ansible.posix` - Para operaciones de sistema POSIX
-- `community.general` - Para módulos `mail` y `archive`
+- `community.general` - Para módulo `archive` (comprimir reportes)
 
 #### Paquetes del Sistema
 
@@ -159,9 +162,11 @@ El Execution Environment debe incluir las siguientes dependencias:
 **Recomendado para producción**. 
 
 1. Configurar Execution Environment
-2. Crear credenciales (GitHub, SMTP)
-3. Configurar Job Template con Survey
+2. Crear credenciales (Hub ACM, GitHub para GitOps, GitLab para reportes)
+3. Configurar Job Template con Survey (`survey_target_clusters`; se recomienda **Multiple choice multi-select** para elegir clusters)
 4. Ejecutar desde AAP UI
+
+Para la configuración detallada en AAP (variables, credenciales HUB ACM y GitLab, Survey), ver **`playbooks/GUIA_ACTUALIZACION_AAP_GITLAB.md`**.
 
 ### Ejecución desde línea de comandos (Desarrollo/Testing)
 
@@ -190,45 +195,61 @@ ansible-playbook playbooks/orchestrator_aap_multicluster.yml \
   -e "gitops_repo_branch=main" \
   -e "survey_target_clusters=cluster-acs,cluster-2"
 
-# Ejecutar con envío por correo consolidado
+# Ejecutar con push de reportes a GitLab
 ansible-playbook playbooks/orchestrator_aap_multicluster.yml \
   -e "do_export_html=true" \
-  -e "do_send_email=true" \
+  -e "do_push_gitlab=true" \
   -e "survey_target_clusters=cluster-acs,cluster-2" \
-  -e "email_smtp_host=smtp.gmail.com" \
-  -e "email_smtp_port=587" \
-  -e "email_smtp_username=tu_email@gmail.com" \
-  -e "email_smtp_password=tu_app_password" \
-  -e "email_to=destinatario1@empresa.com,destinatario2@empresa.com" \
-  -e "email_from=compliance@empresa.com" \
-  -e "email_subject_prefix=Reporte de compliance multicluster"
+  -e "gitlab_repo_url=https://gitlab.com/mi-org/compliance-reports" \
+  -e "gitlab_token=tu_token" \
+  -e "gitlab_user=ansible-bot" \
+  -e "git_workdir=/tmp/compliance-reports-git"
+```
+
+Para **Inform** y **Enforce** (multi-cluster, lista de clusters desde Survey o Extra Vars):
+
+```bash
+# Inform: revisión de controles en varios clusters (survey_target_clusters: uno por línea o multi-select)
+ansible-playbook playbooks/inform.yaml -e "survey_target_clusters=cluster-a\ncluster-b" -e "report_name=ALL"
+
+# Enforce: aplicación de controles en varios clusters
+ansible-playbook playbooks/enforce.yaml -e "survey_target_clusters=cluster-a\ncluster-b" -e "enforce_list=ALL"
 ```
 
 #### Playbook Inform (Revisión de Controles de Seguridad)
 
+Los playbooks `inform.yaml` y `enforce.yaml` usan **`hosts: localhost`** y reciben la lista de clusters por **`survey_target_clusters`** (texto: uno por línea o separados por comas; o multi-select en AAP). Los roles iteran internamente sobre cada cluster (conexión Hub-to-Spoke).
+
 ```bash
-# Ejecutar todas las revisiones (ALL)
+# Ejecutar todas las revisiones (ALL) en uno o varios clusters
 ansible-playbook playbooks/inform.yaml \
   -i inventories/localhost.yml \
+  -e "survey_target_clusters=cluster-a\ncluster-b" \
   -e "report_name=ALL"
 
 # Ejecutar revisiones específicas
 ansible-playbook playbooks/inform.yaml \
   -i inventories/localhost.yml \
+  -e "survey_target_clusters=cluster-a" \
   -e "report_name=kubeadmin,logs,ingress"
 
-# Ejecutar solo revisión de OAuth
+# Con push a GitLab (reportes en reportes_controles_seguridad/<cluster>/)
 ansible-playbook playbooks/inform.yaml \
-  -i inventories/localhost.yml \
-  -e "report_name=oauth"
+  -e "survey_target_clusters=cluster-a" \
+  -e "report_name=ALL" \
+  -e "gitlab_repo_url=https://gitlab.com/org/repo" \
+  -e "gitlab_token=tu_token" \
+  -e "gitlab_user=ansible-bot" \
+  -e "git_workdir=/tmp/compliance-reports-git"
 ```
 
 #### Playbook Enforce (Aplicación de Controles de Seguridad)
 
 ```bash
-# Aplicar todas las remediaciones y controles (ALL)
+# Aplicar todas las remediaciones y controles (ALL) en uno o varios clusters
 ansible-playbook playbooks/enforce.yaml \
   -i inventories/localhost.yml \
+  -e "survey_target_clusters=cluster-a\ncluster-b" \
   -e "enforce_list=ALL"
 
 # Aplicar solo remediaciones automáticas
@@ -260,21 +281,20 @@ flowchart TD
     GitOps --> CheckExport{do_export_html<br/>= true?}
     
     CheckExport -->|Sí| LoopStart[Iniciar Bucle<br/>por Cluster]
-    CheckExport -->|No| CheckEmail
+    CheckExport -->|No| CheckGitLab
     
     LoopStart --> ForEach[Para cada Cluster:<br/>- Obtener Kubeconfig<br/>- Buscar PVCs<br/>- Extraer Reportes<br/>- Generar HTML<br/>- Comprimir en ZIP]
     ForEach --> NextCluster{Hay más<br/>clusters?}
     NextCluster -->|Sí| ForEach
-    NextCluster -->|No| CheckEmail
+    NextCluster -->|No| CheckGitLab
     
-    CheckEmail{do_send_email<br/>= true?}
-    CheckEmail -->|Sí| FindZips[Buscar todos los ZIPs<br/>generados]
-    CheckEmail -->|No| Summary
-    FindZips --> BuildList[Construir Lista<br/>de Clusters Procesados]
-    BuildList --> NormalizeEmail[Normalizar Lista<br/>de Destinatarios]
-    NormalizeEmail --> SendEmail[Enviar Correo Consolidado<br/>con todos los ZIPs]
-    SendEmail --> VerifyEmail[Verificar Resultado<br/>del Envío]
-    VerifyEmail --> Summary
+    CheckGitLab{do_push_gitlab<br/>= true?}
+    CheckGitLab -->|Sí| FindZips[Buscar todos los ZIPs<br/>generados]
+    CheckGitLab -->|No| Summary
+    FindZips --> CloneRepo[Clonar Repo GitLab<br/>con OAuth2]
+    CloneRepo --> CopyReports[Copiar Reportes<br/>al Repo]
+    CopyReports --> GitCommit[Git Add, Commit<br/>y Push]
+    GitCommit --> Summary
     
     Summary[Resumen Final<br/>de Ubicación de Reportes] --> End([Fin del Playbook])
     
@@ -282,17 +302,17 @@ flowchart TD
     style End fill:#FFB6C1
     style GitOps fill:#87CEEB
     style ForEach fill:#DDA0DD
-    style SendEmail fill:#F0E68C
+    style GitCommit fill:#F0E68C
 ```
 
 ### Descripción de las Fases Healthcheck
 
-1. **Normalización de Credenciales**: Lee credenciales desde Environment Variables de AAP y las convierte en variables de Ansible
+1. **Normalización de Credenciales**: Lee credenciales desde Environment Variables de AAP (GitHub, GitLab) y las convierte en variables de Ansible
 2. **Validación**: Verifica que todas las variables requeridas estén presentes según los flags activados
-3. **Normalización de Datos**: Convierte la lista de clusters en formato estándar
+3. **Normalización de Datos**: Convierte la lista de clusters (`survey_target_clusters`) en formato estándar
 4. **Fase GitOps** (opcional): Actualiza políticas de compliance en el repositorio GitOps
 5. **Fase Extracción** (opcional): Por cada cluster, extrae reportes desde PVCs y genera HTML
-6. **Envío Consolidado** (opcional): Envía un solo correo con todos los reportes de todos los clusters
+6. **Push a GitLab** (opcional): Clona el repo GitLab, copia los ZIPs generados, hace commit y push
 7. **Resumen Final**: Muestra la ubicación de los reportes generados
 
 ## Características Principales
@@ -333,25 +353,24 @@ Aplica cambios y configura controles de seguridad automáticamente. Incluye:
 
 ### Multi-Cluster Support
 
-El playbook `orchestrator_aap_multicluster.yml` procesa múltiples clusters en una sola ejecución:
+El playbook `orchestrator_aap_multicluster.yml` y los roles de controles de seguridad procesan múltiples clusters en una sola ejecución:
 
-- Procesa todos los clusters especificados en `survey_target_clusters`
-- Genera reportes individuales por cluster
-- Envía un correo consolidado con todos los reportes al final
+- **Orquestador**: Procesa todos los clusters en `survey_target_clusters` (GitOps, export HTML, push GitLab)
+- **Inform/Enforce**: Los roles reciben `target_clusters_list` (derivada de `survey_target_clusters`) e iteran internamente; cada cluster usa conexión Hub-to-Spoke (secret `admin-kubeconfig` en el Hub)
+- Genera reportes individuales por cluster y los sube a GitLab
 
-### Envío Consolidado de Correos
+### Entrega de Reportes (GitLab)
 
-- **Un solo correo** con todos los reportes de todos los clusters procesados
-- Soporta **múltiples destinatarios** (separados por comas)
-- Archivos comprimidos en ZIP para reducir tamaño
-- Timeout configurable para archivos grandes (`email_smtp_timeout`)
+- **Orquestador**: Push de ZIPs de compliance al repositorio GitLab (ruta `reports/`)
+- **Inform/Enforce**: Push de reportes TXT al repositorio GitLab (ruta `reportes_controles_seguridad/<cluster>/`); se mantienen los 5 archivos más recientes por cluster
+- Autenticación OAuth2 con token; no se usa correo electrónico
 
 ### Seguridad
 
 - **Sin valores hardcodeados**: Todas las variables sensibles se inyectan desde AAP
 - **Validación de inputs**: El playbook valida que todas las variables requeridas estén presentes
 - **Credenciales seguras**: Soporte para Source Control Credentials y Environment Variables en AAP
-- **Soporte de Environment Variables**: Los playbooks `inform.yaml` y `enforce.yaml` normalizan automáticamente las credenciales SMTP desde Environment Variables inyectadas por Credential Types de AAP
+- **Soporte de Environment Variables**: Los playbooks normalizan credenciales desde Environment Variables (GitHub: `GITHUB_TOKEN`, `GITHUB_USER`; GitLab: `GITLAB_TOKEN`, `GITLAB_USER`) inyectadas por Credential Types de AAP
 
 ### 100% Agnóstico
 
@@ -399,13 +418,14 @@ Este rol realiza revisiones y auditorías de controles de seguridad sin realizar
 
 8. **automatic_remediation_inform.yml**: Lista todas las ComplianceRemediations detectadas por el Compliance Operator y su estado actual.
 
-9. **99_send_report.yml**: Genera un reporte consolidado y lo envía por correo electrónico.
+9. **99_send_report.yml**: Genera un reporte consolidado (TXT) y lo sube al repositorio GitLab (ruta `reportes_controles_seguridad/<cluster>/`); mantiene los 5 archivos más recientes por cluster.
 
 #### Control de Ejecución
 
-Las tareas se ejecutan condicionalmente basándose en la variable `report_name`:
-- `ALL`: Ejecuta todas las revisiones
-- Lista específica: Ejecuta solo las revisiones especificadas (ej: `kubeadmin,logs,ingress`)
+- **Iteración por clusters**: El rol recibe `target_clusters_list` (derivada de `survey_target_clusters` en el playbook) e itera internamente (`main.yml` → `process_cluster.yml` por cada cluster). La conexión a cada cluster es **Hub-to-Spoke** (secret `admin-kubeconfig` en el Hub).
+- **Revisiones**: Las tareas se ejecutan condicionalmente según `report_name`:
+  - `ALL`: Ejecuta todas las revisiones
+  - Lista específica: Ejecuta solo las revisiones especificadas (ej: `kubeadmin,logs,ingress`)
 
 ### Rol `controles-seguridad-enforce`
 
@@ -425,13 +445,14 @@ Este rol aplica cambios y configura controles de seguridad automáticamente en e
    - Genera un respaldo de la configuración original antes de aplicar cambios
    - Soporta filtrado de clientes mediante la variable `oauth_client`
 
-3. **99_send_report.yml**: Genera un reporte consolidado con todas las acciones realizadas y lo envía por correo electrónico.
+3. **99_send_report.yml**: Genera un reporte consolidado con todas las acciones realizadas y lo sube al repositorio GitLab (ruta `reportes_controles_seguridad/<cluster>/`).
 
 #### Control de Ejecución
 
-Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`:
-- `ALL`: Aplica todos los controles
-- Lista específica: Aplica solo los controles especificados (ej: `remediaciones_automaticas,oauth`)
+- **Iteración por clusters**: Igual que el rol Inform: el rol recibe `target_clusters_list` e itera internamente; conexión Hub-to-Spoke por cluster.
+- **Controles**: Las tareas se ejecutan condicionalmente según `enforce_list`:
+  - `ALL`: Aplica todos los controles
+  - Lista específica: Aplica solo los controles especificados (ej: `remediaciones_automaticas,oauth`)
 
 #### Seguridad y Respaldo
 
@@ -447,7 +468,7 @@ Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`
 |----------|------|-------------|---------|
 | `do_gitops` | boolean | Activar actualización de políticas GitOps | `false` |
 | `do_export_html` | boolean | Activar exportación de reportes HTML | `false` |
-| `do_send_email` | boolean | Activar envío de reportes por correo | `false` |
+| `do_push_gitlab` | boolean | Activar push de reportes al repositorio GitLab | `false` |
 
 ### Variables de GitOps (Requeridas si `do_gitops=true`)
 
@@ -464,18 +485,15 @@ Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`
 | `placement_label_key` | string | Key del label para placement | `compliance` |
 | `placement_label_value` | string | Valor del label para placement | `enabled` |
 
-### Variables de Correo (Requeridas si `do_send_email=true`)
+### Variables de GitLab (Requeridas si `do_push_gitlab=true` en orquestador)
 
 | Variable | Tipo | Descripción | Default |
 |----------|------|-------------|---------|
-| `email_smtp_host` | string | Servidor SMTP | - |
-| `email_smtp_port` | integer | Puerto SMTP | `587` |
-| `email_smtp_username` | string | Usuario SMTP | - |
-| `email_smtp_password` | string | Contraseña SMTP (🔒 Credential) | - |
-| `email_to` | string/list | Destinatario(s) (separados por comas) | - |
-| `email_from` | string | Remitente | - |
-| `email_subject_prefix` | string | Prefijo del asunto | - |
-| `email_smtp_timeout` | integer | Timeout SMTP en segundos | `60` |
+| `gitlab_repo_url` | string | URL HTTPS del repositorio GitLab | - |
+| `gitlab_token` | string | Token de acceso GitLab (🔒 Credential) | - |
+| `gitlab_user` | string | Usuario Git para commits | - |
+| `git_workdir` | string | Directorio temporal para clonar el repo | `/tmp/compliance-reports-git` |
+| `gitlab_repo_branch` | string | Rama del repositorio | `main` |
 
 ### Variables de Multi-Cluster
 
@@ -487,32 +505,32 @@ Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`
 
 | Variable | Tipo | Descripción | Default |
 |----------|------|-------------|---------|
+| `survey_target_clusters` | string/list | Lista de clusters a procesar (Survey multi-select o texto, uno por línea/comas). Los playbooks la convierten en `target_clusters_list`. | - |
 | `report_name` | string | Controles a revisar (`ALL` o lista: `kubeadmin,logs,ingress,ldap,acs,network,oauth,remediation`) | `ALL` |
-| `send_mail` | boolean | Activar envío de reporte por correo | `true` |
-| `mail_to` | string | Destinatario del correo | - |
-| `mail_from` | string | Remitente del correo | - |
-| `email_smtp_password` | string | Contraseña SMTP (🔒 Credential) | - |
-| `smtp_host` | string | Servidor SMTP | - |
-| `report_dir` | string | Directorio para guardar reportes | `/tmp/ocp-reports` |
+| `report_dir` | string | Directorio local para guardar reportes | `/tmp/ocp-reports` |
 | `system_ns_regex` | string | Expresión regular para filtrar namespaces del sistema en network policies | `^(openshift.*\|kube.*\|default\|stackrox)$` |
+| `git_workdir` | string | Directorio temporal para clonar el repo GitLab (push de reportes) | - |
+| `gitlab_repo_url` | string | URL HTTPS del repositorio GitLab | - |
+| `gitlab_token` | string | Token de acceso GitLab (🔒 Credential) | - |
+| `gitlab_user` | string | Usuario Git para commits | - |
 
-**Nota**: El rol `controles-seguridad-inform` soporta la inyección automática de `EMAIL_SMTP_PASSWORD` desde Environment Variables de AAP. Si utilizas un Credential Type que inyecta esta variable de entorno, el rol la normalizará automáticamente a `email_smtp_password`.
+**Nota**: Los roles iteran sobre `target_clusters_list` (derivada de `survey_target_clusters`). La conexión a cada cluster es Hub-to-Spoke (secret `admin-kubeconfig` en el Hub). Los reportes se suben a GitLab si están definidos `git_workdir` y `gitlab_repo_url`.
 
 ### Variables de Controles de Seguridad - Enforce
 
 | Variable | Tipo | Descripción | Default |
 |----------|------|-------------|---------|
+| `survey_target_clusters` | string/list | Lista de clusters a procesar (Survey multi-select o texto). Se convierte en `target_clusters_list`. | - |
 | `enforce_list` | string | Controles a aplicar (`ALL` o lista: `remediaciones_automaticas,oauth`) | `ALL` |
 | `remediation_name` | string | Filtro de remediaciones (`ALL` o lista separada por comas) | `ALL` |
 | `oauth_client` | string | Filtro de clientes OAuth (`ALL` o lista separada por comas) | `ALL` |
-| `send_mail` | boolean | Activar envío de reporte por correo | `true` |
-| `mail_to` | string | Destinatario del correo | - |
-| `mail_from` | string | Remitente del correo | - |
-| `email_smtp_password` | string | Contraseña SMTP (🔒 Credential) | - |
-| `smtp_host` | string | Servidor SMTP | - |
-| `report_dir` | string | Directorio para guardar reportes | `/tmp/ocp-reports` |
+| `report_dir` | string | Directorio local para guardar reportes | `/tmp/ocp-reports` |
+| `git_workdir` | string | Directorio temporal para clonar el repo GitLab | - |
+| `gitlab_repo_url` | string | URL HTTPS del repositorio GitLab | - |
+| `gitlab_token` | string | Token de acceso GitLab (🔒 Credential) | - |
+| `gitlab_user` | string | Usuario Git para commits | - |
 
-**Nota**: El rol `controles-seguridad-enforce` soporta la inyección automática de `EMAIL_SMTP_PASSWORD` desde Environment Variables de AAP. Si utilizas un Credential Type que inyecta esta variable de entorno, el rol la normalizará automáticamente a `email_smtp_password`.
+**Nota**: Misma lógica de iteración y Hub-to-Spoke que el rol Inform; los reportes se suben a GitLab si están definidas las variables de GitLab.
 
 **🔒 SEGURIDAD**: Las variables marcadas con 🔒 deben configurarse como **Credentials** o **Environment Variables** en AAP (nunca en texto plano).
 
@@ -522,29 +540,18 @@ Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`
 
 **Solución**: Verificar que `github_user`, `github_token` y `gitops_repo_branch` estén definidas cuando `do_gitops=true`.
 
-### Error: "Faltan variables de Correo"
+### Error: "Faltan variables de GitLab"
 
-**Solución**: Verificar que todas las variables de correo estén definidas cuando `do_send_email=true`.
+**Solución**: Verificar que `gitlab_repo_url`, `gitlab_token`, `gitlab_user` y `git_workdir` estén definidas cuando `do_push_gitlab=true` (orquestador) o cuando los roles Inform/Enforce deban subir reportes a GitLab.
 
-### Error: "'email_smtp_password' is undefined" en playbooks inform.yaml o enforce.yaml
+### Error: Git push falla (credenciales o rama)
 
-**Síntoma**: El playbook falla con el error `'email_smtp_password' is undefined` al intentar enviar correos.
+**Síntoma**: La tarea "[REPORT] Añadir archivos, commit y push a GitLab" falla.
 
-**Solución**: 
-1. Si estás usando un **Credential Type** en AAP que inyecta `EMAIL_SMTP_PASSWORD` como variable de entorno, asegúrate de que el Credential Type esté correctamente configurado:
-   - **Input configuration**: Define un campo secreto (ej: `smtp_password`)
-   - **Injector configuration**: Inyecta `EMAIL_SMTP_PASSWORD` como variable de entorno
-2. El rol normaliza automáticamente `EMAIL_SMTP_PASSWORD` a `email_smtp_password`, pero si prefieres pasar la variable directamente, puedes usar:
-   ```bash
-   ansible-playbook playbooks/inform.yaml -e "email_smtp_password=tu_contraseña"
-   ```
-3. Verifica que el Credential esté asociado al Job Template en AAP.
-
-### Timeout al enviar correo (pero el correo se envía)
-
-**Síntoma**: `TimeoutError: The read operation timed out`
-
-**Solución**: Aumentar `email_smtp_timeout` a 90 o 120 segundos para archivos grandes.
+**Solución**:
+1. Verificar que la credencial de GitLab (token) esté asociada al Job Template y que inyecte `GITLAB_TOKEN` o que `gitlab_token` se pase por Extra Vars/Survey (como secreto).
+2. Verificar que la rama (`gitlab_repo_branch` o `main`) exista en el repositorio.
+3. Si no hay cambios que commitear, la tarea está preparada para no fallar (mensaje `NO_CHANGES`); si aun así falla, revisar la salida del job (temporalmente `no_log: false` en la tarea para depurar).
 
 ### No se encuentran PVCs en los clusters
 
