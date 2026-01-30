@@ -238,6 +238,25 @@
         - most_recent_zips is defined
         - most_recent_zips | length > 0
 
+    # Retención: mantener solo los 5 archivos más recientes por cluster (evita duplicados en el repo)
+    - name: Limpiar reportes antiguos en reports/ por cluster (máximo 5 por cluster)
+      ansible.builtin.shell: |
+        cd "{{ git_workdir }}/reports/{{ item }}"
+        n=$(ls -tp 2>/dev/null | grep -v '/$' | wc -l)
+        if [ "$n" -gt 5 ]; then
+          ls -tp | grep -v '/$' | tail -n +6 | xargs -I {} rm -- {}
+        fi
+      args:
+        executable: /bin/bash
+      loop: "{{ clusters_with_reports | default([]) }}"
+      when:
+        - do_push_gitlab | bool
+        - most_recent_zips is defined
+        - most_recent_zips | length > 0
+        - clusters_with_reports is defined
+      changed_when: false
+      delegate_to: localhost
+
     - name: Configurar usuario Git para commit
       ansible.builtin.command:
         cmd: git config user.name "{{ gitlab_user }}"
