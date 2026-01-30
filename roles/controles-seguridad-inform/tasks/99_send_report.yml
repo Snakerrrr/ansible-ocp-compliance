@@ -74,29 +74,27 @@
   delegate_to: localhost
   changed_when: false
 
-# --- Configurar Git y hacer commit + push ---
-- name: "[REPORT] Configurar usuario Git para commit"
-  ansible.builtin.command:
-    cmd: git config user.name "{{ gitlab_user | default('ansible-bot') }}"
-    chdir: "{{ git_workdir }}"
-  when: git_workdir is defined and gitlab_repo_url is defined
-  delegate_to: localhost
-
-- name: "[REPORT] Configurar email Git para commit"
-  ansible.builtin.command:
-    cmd: git config user.email "{{ gitlab_user | default('ansible-bot') }}@users.noreply.gitlab.com"
-    chdir: "{{ git_workdir }}"
-  when: git_workdir is defined and gitlab_repo_url is defined
-  delegate_to: localhost
-
+# --- Configurar Git y hacer commit + push (robusto ante "nada que commitear") ---
 - name: "[REPORT] Añadir archivos, commit y push a GitLab"
-  ansible.builtin.shell: >-
-    cd "{{ git_workdir }}"
-    && git add .
-    && git commit -m "Reporte Inform - {{ target_cluster_name | default('cluster_undefined') }} - {{ ansible_date_time.iso8601 }}"
-    && git push origin "{{ gitlab_repo_branch | default('main') }}"
+  ansible.builtin.shell: |
+    # 1. Configurar identidad local (necesario en entornos efímeros)
+    git config user.email "{{ gitlab_user | default('ansible-bot') }}@users.noreply.gitlab.com"
+    git config user.name "{{ gitlab_user | default('Ansible Automation') }}"
+
+    # 2. Añadir cambios
+    git add .
+
+    # 3. Commit (|| true para no fallar si no hay cambios)
+    git commit -m "Reporte Inform - {{ target_cluster_name | default('cluster_undefined') }} - {{ ansible_date_time.iso8601 }}" || echo "No hay cambios nuevos para commitear"
+
+    # 4. Push
+    git push origin {{ gitlab_repo_branch | default('main') }}
   args:
     chdir: "{{ git_workdir }}"
+  environment:
+    GIT_TERMINAL_PROMPT: "0"
+  register: git_push_result
+  changed_when: "'No hay cambios' not in (git_push_result.stdout | default(''))"
   when: git_workdir is defined and gitlab_repo_url is defined
   delegate_to: localhost
   no_log: true
