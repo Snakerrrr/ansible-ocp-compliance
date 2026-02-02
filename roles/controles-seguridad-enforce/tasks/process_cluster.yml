@@ -81,17 +81,66 @@
     msg: "Cluster: {{ target_cluster_name | default('N/A') }} | Kubeconfig: {{ dynamic_kubeconfig_path | default('contexto por defecto') }}"
   when: target_cluster_name is defined
 
+# Verificación Hub vs Spoke: leer el kubeconfig del spoke y mostrar a qué API Server apunta
+- name: "[CONN] Leer kubeconfig del spoke para verificar API Server"
+  ansible.builtin.slurp:
+    src: "/tmp/kubeconfig-{{ target_cluster_name }}"
+  register: spoke_kubeconfig_raw
+  when:
+    - target_cluster_name is defined
+    - target_cluster_name | length > 0
+    - kubeconfig_file_stat.stat.exists | default(false)
+
+- name: "[CONN] Verificación Hub vs Spoke - API Server del kubeconfig del spoke"
+  ansible.builtin.set_fact:
+    spoke_api_server: "{{ ((spoke_kubeconfig_raw.content | b64decode) | from_yaml).clusters[0].cluster.server }}"
+  when:
+    - target_cluster_name is defined
+    - spoke_kubeconfig_raw.content is defined
+    - spoke_kubeconfig_raw.content | length > 0
+
+- name: "[CONN] Debug - API Server al que apunta el kubeconfig del spoke (debe ser el spoke, no el Hub)"
+  ansible.builtin.debug:
+    msg: |
+      target_cluster_name (namespace en Hub): {{ target_cluster_name }}
+      Ruta kubeconfig usado para las tareas: {{ dynamic_kubeconfig_path }}
+      API Server en ese kubeconfig: {{ spoke_api_server | default('(no obtenido)') }}
+      → Si la URL coincide con la del Hub, el secret admin-kubeconfig en el Hub está mal o es del Hub.
+  when: target_cluster_name is defined
+
+- name: "[INIT] Debug - Usando kubeconfig del spoke (no del Hub)"
+  ansible.builtin.debug:
+    msg: "Iniciando consultas al cluster con kubeconfig={{ dynamic_kubeconfig_path }} (target={{ target_cluster_name }})"
+  when:
+    - target_cluster_name is defined
+    - dynamic_kubeconfig_path is defined
+
 - name: "[INIT] Obtener infraestructura del cluster"
   kubernetes.core.k8s_info:
     api_version: config.openshift.io/v1
     kind: Infrastructure
     name: cluster
-    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
+    kubeconfig: "{{ dynamic_kubeconfig_path }}"
   register: infra_info
+  when: dynamic_kubeconfig_path is defined
 
 - name: "[INIT] Definir variables de ejecución"
   ansible.builtin.set_fact:
     cluster_name: "{{ infra_info.resources[0].status.infrastructureName | default('DESCONOCIDO') }}"
+  when:
+    - infra_info.resources is defined
+    - infra_info.resources | length > 0
+
+- name: "[INIT] Debug - Infrastructure obtenida (debe ser del spoke, no del Hub)"
+  ansible.builtin.debug:
+    msg: |
+      target_cluster_name: {{ target_cluster_name }}
+      infrastructureName devuelto: {{ cluster_name | default(infra_info.resources[0].status.infrastructureName | default('N/A')) }}
+      → Comparar con el nombre interno del Hub. Si es el mismo, las tareas están consultando el Hub por error.
+  when:
+    - target_cluster_name is defined
+    - infra_info.resources is defined
+    - infra_info.resources | length > 0
 
 # SECCION ENFORCE - APLICACION DE CAMBIOS
 
