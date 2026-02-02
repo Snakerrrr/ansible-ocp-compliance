@@ -1,26 +1,10 @@
 ---
-# Los roles esperan un host por cluster (target_clusters) para ejecutar contra cada spoke,
-# no contra localhost/Hub. Play 1: construye la lista y añade un host por cluster.
-# Play 2: ejecuta el rol sobre esos hosts; cada host = un cluster (kubeconfig del spoke).
-# Acepta: survey_target_clusters como lista (multi-select), texto con saltos de línea o comas.
-- name: Preparar lista de clusters y crear hosts dinámicos (un host por cluster)
+# Los roles esperan target_clusters_list (lista). Se deriva de survey_target_clusters.
+# Acepta: lista (multi-select en Survey), texto con saltos de línea o comas.
+- name: Controles de seguridad - Inform
   hosts: localhost
   gather_facts: false
   vars:
     target_clusters_list: "{{ ((survey_target_clusters | replace(',', '\n')).split('\n') | map('trim') | reject('equalto', '') | list) if (survey_target_clusters is defined and survey_target_clusters is string) else (survey_target_clusters if survey_target_clusters is defined else []) }}"
-  tasks:
-    - name: Añadir un host por cluster para ejecutar contra cada spoke (no Hub)
-      ansible.builtin.add_host:
-        name: "{{ item }}"
-        groups: target_clusters
-        ansible_connection: local
-      loop: "{{ target_clusters_list | default([]) }}"
-      when: target_clusters_list is defined and target_clusters_list | length > 0
-
-- name: Controles de seguridad - Inform (ejecutado por cluster, usando kubeconfig del spoke)
-  hosts: target_clusters
-  gather_facts: false
-  vars:
-    target_cluster_name: "{{ inventory_hostname }}"
   roles:
     - controles-seguridad-inform
