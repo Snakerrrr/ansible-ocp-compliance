@@ -11,10 +11,10 @@
         src: report_final.j2
         dest: "{{ report_dir }}/{{ report_file }}.txt"
 
-# --- Variables de ruta para GitLab (reportes_controles_seguridad/Inform/<cluster>/reporte-....txt) ---
+# --- Variables de ruta para GitLab: reportes_controles_seguridad/<cluster>/inform/ ---
 - name: "[REPORT] Definir ruta del reporte por cluster en el repo"
   ansible.builtin.set_fact:
-    cluster_report_dir: "{{ git_workdir }}/reportes_controles_seguridad/Inform/{{ target_cluster_name | default('cluster_undefined') }}"
+    cluster_report_dir: "{{ git_workdir }}/reportes_controles_seguridad/{{ target_cluster_name | default('cluster_undefined') }}/inform"
   when: git_workdir is defined and gitlab_repo_url is defined
 
 # --- URL de repo con autenticación OAuth2 (no_log para no exponer token) ---
