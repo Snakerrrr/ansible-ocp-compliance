@@ -147,7 +147,7 @@ Si no usas Survey, pasa los clusters por **Extra Variables** del Job Template:
 
 | Credencial | Dónde | Acción |
 |------------|--------|--------|
-| **HUB ACM** (OpenShift/Kubernetes o Kubeconfig) | Job Template de Enforce y Job Template de Inform | **Añadir / vincular.** El playbook ejecuta `oc get secret admin-kubeconfig -n <cluster>` contra el Hub. La credencial debe **inyectar KUBECONFIG** en el job (tipo "OpenShift" o "Kubernetes" con inyección a entorno). Si en tu AAP la credencial no inyecta KUBECONFIG, define la variable **`hub_kubeconfig_path`** (Extra Var o Survey) con la ruta al archivo kubeconfig del Hub. |
+| **HUB ACM** (OpenShift/Kubernetes o Bearer Token) | Job Template de Enforce y Job Template de Inform | **Añadir / vincular.** El playbook usa el módulo `kubernetes.core.k8s_info` para leer el secret `admin-kubeconfig` en el Hub; utiliza la **misma credencial** que asocias al Job Template (OpenShift/Kubernetes o Bearer Token). No hace falta que la credencial inyecte `KUBECONFIG`: los módulos `kubernetes.core` usan las variables que AAP inyecta (p. ej. `K8S_AUTH_*`). |
 | **Git (Source Control)** | Proyecto del Job Template | Mantener si el Proyecto obtiene el código desde un repo Git. No es necesaria para la lógica de clusters ni para GitOps. |
 
 ### 4. Playbook e inventario

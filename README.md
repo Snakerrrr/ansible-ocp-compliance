@@ -535,10 +535,10 @@ El orquestador acepta también `GITLAB_TOKEN` y `GITLAB_USER` desde Environment 
 
 ### Error: "Faltan variables de Git" (Hub-to-Spoke)
 
-**Solución**: Los roles Inform y Enforce ejecutan `oc get secret admin-kubeconfig -n <cluster>` contra el Hub. Necesitan que `oc` tenga kubeconfig:
-1. **Recomendado**: Asocia la credencial del **Hub ACM** (OpenShift/Kubernetes) al Job Template y asegúrate de que **inyecte KUBECONFIG** en el job (tipo credencial que escribe el kubeconfig y define la variable de entorno).
-2. Si en tu AAP la credencial no inyecta KUBECONFIG, define la variable **`hub_kubeconfig_path`** (Extra Var o Survey) con la ruta al archivo kubeconfig del Hub (p. ej. la ruta donde AAP escribe el kubeconfig de la credencial).
-3. La variable `survey_target_clusters` (o `target_clusters_list`) debe contener los nombres de los clusters (namespaces en el Hub).
+**Solución**: Los roles Inform y Enforce usan **`kubernetes.core.k8s_info`** para leer el secret `admin-kubeconfig` en el Hub; utilizan la **credencial OpenShift/Kubernetes** que asocias al Job Template (la misma que ves en "Credentials"). No se usa el CLI `oc`, así que funciona con credenciales tipo **Bearer Token** o **Kubeconfig**.
+1. Asocia la credencial del **Hub ACM** (OpenShift/Kubernetes) al Job Template de Inform y Enforce.
+2. Asegúrate de que `survey_target_clusters` (o `target_clusters_list`) contenga los nombres de los clusters que coinciden con los **namespaces** de los managed clusters en el Hub (p. ej. `cluster-2`).
+3. Si aun así falla, revisa que el secret `admin-kubeconfig` exista en el namespace de cada cluster en el Hub: `oc get secret admin-kubeconfig -n <nombre-cluster>` (desde una sesión donde tengas acceso al Hub).
 
 ### No se encuentran PVCs en los clusters
 
