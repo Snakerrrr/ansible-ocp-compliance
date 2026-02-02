@@ -1,47 +1,35 @@
 ---
 # ---------------------------------------------------------
 # CONEXIÓN HUB-TO-SPOKE: Extraer kubeconfig del managed cluster desde el Hub
+# (usa kubernetes.core.k8s_info para aprovechar credenciales inyectadas por AAP)
 # ---------------------------------------------------------
-- name: "[INIT] Extraer Kubeconfig del Hub para {{ target_cluster_name }}"
-  ansible.builtin.shell: |
-    oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}' | base64 -d
+- name: "[INIT] Leer secreto admin-kubeconfig del Hub (Nativo)"
+  kubernetes.core.k8s_info:
+    kind: Secret
+    namespace: "{{ target_cluster_name | trim }}"
+    name: admin-kubeconfig
   delegate_to: localhost
-  register: kubeconfig_content
-  no_log: true
-  failed_when: false
+  register: hub_secret_info
   when: target_cluster_name is defined and target_cluster_name | length > 0
 
-- name: "[INIT] Validar que se obtuvo credencial"
+- name: "[INIT] Validar que el secreto existe"
   ansible.builtin.fail:
-    msg: "No se pudo encontrar el secreto admin-kubeconfig para el cluster '{{ target_cluster_name }}'. Verifique que el nombre sea correcto y el secreto exista en el Hub."
-  when:
-    - target_cluster_name is defined
-    - target_cluster_name | length > 0
-    - kubeconfig_content is defined
-    - kubeconfig_content.rc != 0 or kubeconfig_content.stdout | default('') | trim == ""
+    msg: "No se encontró el secreto 'admin-kubeconfig' en el namespace '{{ target_cluster_name }}'. Revisa el Hub."
+  when: hub_secret_info is defined and hub_secret_info.resources | length == 0
 
 - name: "[INIT] Guardar Kubeconfig temporal"
   ansible.builtin.copy:
-    content: "{{ kubeconfig_content.stdout }}"
+    content: "{{ hub_secret_info.resources[0].data.kubeconfig | b64decode }}"
     dest: "/tmp/kubeconfig-{{ target_cluster_name }}"
     mode: '0600'
   delegate_to: localhost
-  when:
-    - target_cluster_name is defined
-    - target_cluster_name | length > 0
-    - kubeconfig_content is defined
-    - kubeconfig_content.rc == 0
-    - kubeconfig_content.stdout | default('') | trim != ""
+  when: hub_secret_info is defined and hub_secret_info.resources | length > 0
+  no_log: true
 
-- name: "[INIT] Definir variable de ruta de conexión"
+- name: "[INIT] Definir variable de ruta"
   ansible.builtin.set_fact:
     dynamic_kubeconfig_path: "/tmp/kubeconfig-{{ target_cluster_name }}"
-  when:
-    - target_cluster_name is defined
-    - target_cluster_name | length > 0
-    - kubeconfig_content is defined
-    - kubeconfig_content.rc == 0
-    - kubeconfig_content.stdout | default('') | trim != ""
+  when: hub_secret_info is defined and hub_secret_info.resources | length > 0
 
 # ---------------------------------------------------------
 # Todas las tareas contra el SPOKE usan KUBECONFIG explícito
