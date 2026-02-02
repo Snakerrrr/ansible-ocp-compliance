@@ -1,21 +1,22 @@
 ---
 # ---------------------------------------------------------
 # CONEXIÓN HUB-TO-SPOKE: Extraer kubeconfig del managed cluster desde el Hub
-# (Método Shell - mismo enfoque que orchestrator/compliance_wait)
+# (Lógica Orchestrator - shell con credencial AAP visible vía KUBECONFIG)
 # ---------------------------------------------------------
-- name: "[INIT] Buscar admin-kubeconfig en el Hub (Método Shell)"
+- name: "[INIT] Buscar admin-kubeconfig en el Hub (Lógica Orchestrator)"
   ansible.builtin.shell: |
     oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}' 2>&1 | base64 -d || echo ""
   register: kubeconfig_from_admin
   delegate_to: localhost
   changed_when: false
-  when: target_cluster_name is defined and target_cluster_name | length > 0
-  # No usamos failed_when aquí porque controlamos el error abajo con echo ""
+  # Aseguramos que el comando 'oc' vea la credencial del AAP
+  environment:
+    KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') }}"
 
 - name: "[INIT] Validar que se obtuvo credencial"
   ansible.builtin.fail:
-    msg: "FATAL: No se pudo extraer el kubeconfig para '{{ target_cluster_name }}'. El comando retornó vacío."
-  when: kubeconfig_from_admin is defined and kubeconfig_from_admin.stdout | default('') | length < 100
+    msg: "FATAL: No se pudo extraer el kubeconfig para '{{ target_cluster_name }}'. El secreto no existe o el Hub no es accesible."
+  when: kubeconfig_from_admin.stdout | length < 100
 
 - name: "[INIT] Guardar Kubeconfig temporal"
   ansible.builtin.copy:
@@ -23,12 +24,10 @@
     dest: "/tmp/kubeconfig-{{ target_cluster_name }}"
     mode: '0600'
   delegate_to: localhost
-  when: target_cluster_name is defined and target_cluster_name | length > 0 and kubeconfig_from_admin.stdout | default('') | length >= 100
 
 - name: "[INIT] Definir variable de ruta de conexión"
   ansible.builtin.set_fact:
     dynamic_kubeconfig_path: "/tmp/kubeconfig-{{ target_cluster_name }}"
-  when: target_cluster_name is defined and target_cluster_name | length > 0 and kubeconfig_from_admin.stdout | default('') | length >= 100
 
 # ---------------------------------------------------------
 # Todas las tareas contra el SPOKE usan KUBECONFIG explícito
