@@ -1,29 +1,26 @@
 ---
-- block:
-    - name: "Obtener configuración OAuth"
-      kubernetes.core.k8s_info:
-        api_version: "{{ item.api }}"
-        kind: "{{ item.kind }}"
-        name: "{{ item.name | default(omit) }}"
-        namespace: "{{ item.ns | default(omit) }}"
-        kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
-      loop:
-        - { api: "config.openshift.io/v1", kind: "OAuth", name: "cluster" }
-      register: kube_oauth_res
+- name: "Obtener configuración OAuth"
+  kubernetes.core.k8s_info:
+    api_version: "{{ item.api }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name | default(omit) }}"
+    namespace: "{{ item.ns | default(omit) }}"
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
+  loop:
+    - { api: "config.openshift.io/v1", kind: "OAuth", name: "cluster" }
+  register: kube_oauth_res
 
-    - name: "Procesar resultado"
-      ansible.builtin.set_fact:
-        id_providers: "{{ kube_oauth_res.results[1].resources[0].spec.identityProviders | default([]) }}"
+- name: "Procesar resultado"
+  ansible.builtin.set_fact:
+    id_providers: "{{ kube_oauth_res.results[1].resources[0].spec.identityProviders | default([]) }}"
 
-    - name: "[LDAP] Filtrar Providers"
-      ansible.builtin.set_fact:
-        ldap_idps: "{{ id_providers | selectattr('type', 'equalto', 'LDAP') | list }}"
-      when: id_providers is defined
+- name: "[LDAP] Filtrar Providers"
+  ansible.builtin.set_fact:
+    ldap_idps: "{{ id_providers | selectattr('type', 'equalto', 'LDAP') | list }}"
+  when: id_providers is defined
 
-    - name: "[LDAP] Definir texto resultado"
-      ansible.builtin.set_fact:
-        ldap_resultado: |-
-          {% if ldap_idps | default([]) | length == 0 %}Protocolo LDAP NO configurado como IdentityProvider.
-          {% else %}{% for idp in ldap_idps %}LDAP Configurado - Nombre: {{ idp.name }} - insecure: {{ idp.ldap.insecure | default(false) }}{% endfor %}{% endif %}
-  environment:
-    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
+- name: "[LDAP] Definir texto resultado"
+  ansible.builtin.set_fact:
+    ldap_resultado: |-
+      {% if ldap_idps | default([]) | length == 0 %}Protocolo LDAP NO configurado como IdentityProvider.
+      {% else %}{% for idp in ldap_idps %}LDAP Configurado - Nombre: {{ idp.name }} - insecure: {{ idp.ldap.insecure | default(false) }}{% endfor %}{% endif %}

@@ -1,102 +1,84 @@
 ---
-# ---------------------------------------------------------
-# CONEXIÓN HUB-TO-SPOKE: Extraer kubeconfig del managed cluster desde el Hub
-# (Auth explícita: K8S_AUTH_API_KEY y K8S_AUTH_HOST inyectados por AAP)
-# ---------------------------------------------------------
-- name: "[INIT] Obtener RAW admin-kubeconfig (Con Auth Explícita)"
-  ansible.builtin.command: >
-    oc get secret admin-kubeconfig
-    -n {{ target_cluster_name }}
-    -o jsonpath='{.data.kubeconfig}'
-    --token="{{ lookup('env', 'K8S_AUTH_API_KEY') }}"
-    --server="{{ lookup('env', 'K8S_AUTH_HOST') }}"
-    --insecure-skip-tls-verify
+# -------------------------------------------------------------------------
+# MÉTODO ORCHESTRATOR: Extracción robusta usando el entorno nativo de AAP
+# -------------------------------------------------------------------------
+
+- name: "[INIT] Extraer admin-kubeconfig del Hub (Estilo Orchestrator)"
+  ansible.builtin.shell: |
+    oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}' 2>&1 | base64 -d || echo ""
+  register: kubeconfig_from_hub
   delegate_to: localhost
-  register: raw_secret_output
-  ignore_errors: true
+  changed_when: false
+  # CRÍTICO: Esto asegura que 'oc' vea la credencial del Hub que tiene el AAP
+  environment:
+    KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') }}"
 
-- name: "[DEBUG] Ver error real de OC (Si falló)"
-  ansible.builtin.debug:
-    msg:
-      - "El comando OC falló. Mensaje de error real:"
-      - "{{ raw_secret_output.stderr }}"
-      - "{{ raw_secret_output.stdout }}"
-  when: raw_secret_output.rc != 0
-
-- name: "[INIT] Validar éxito"
+- name: "[INIT] Validar extracción del secreto"
   ansible.builtin.fail:
-    msg: "FATAL: No se pudo obtener el secreto. El token del AAP no funcionó o el secreto no existe."
-  when: raw_secret_output.rc != 0
+    msg: "FATAL: No se pudo recuperar el kubeconfig para '{{ target_cluster_name }}'. El comando retornó vacío o falló."
+  when: kubeconfig_from_hub.stdout | length < 100
 
-- name: "[INIT] Guardar Kubeconfig (Decodificado por Ansible)"
+- name: "[INIT] Guardar Kubeconfig temporal para el Spoke"
   ansible.builtin.copy:
-    content: "{{ raw_secret_output.stdout | b64decode }}"
+    content: "{{ kubeconfig_from_hub.stdout }}"
     dest: "/tmp/kubeconfig-{{ target_cluster_name }}"
     mode: '0600'
   delegate_to: localhost
 
-- name: "[INIT] Definir variable de ruta"
+- name: "[INIT] Definir variable para uso posterior"
   ansible.builtin.set_fact:
     dynamic_kubeconfig_path: "/tmp/kubeconfig-{{ target_cluster_name }}"
 
-# ---------------------------------------------------------
-# Todas las tareas contra el SPOKE usan KUBECONFIG explícito
-# ---------------------------------------------------------
-- name: "[SPOKE] Tareas contra el clúster destino (kubeconfig descargado)"
-  when: dynamic_kubeconfig_path is defined and dynamic_kubeconfig_path | length > 0
-  block:
-    - name: "[INIT] Obtener infraestructura del cluster"
-      kubernetes.core.k8s_info:
-        api_version: config.openshift.io/v1
-        kind: Infrastructure
-        name: cluster
-        kubeconfig: "{{ dynamic_kubeconfig_path }}"
-      register: infra_info
-      environment:
-        KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
+- name: "[INIT] Obtener infraestructura del cluster"
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Infrastructure
+    name: cluster
+    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
+  register: infra_info
 
-    - name: "[INIT] Definir variables de ejecución"
-      ansible.builtin.set_fact:
-        cluster_name: "{{ infra_info.resources[0].status.infrastructureName | default('DESCONOCIDO') }}"
+- name: "[INIT] Definir variables de ejecución"
+  ansible.builtin.set_fact:
+    cluster_name: "{{ infra_info.resources[0].status.infrastructureName | default('DESCONOCIDO') }}"
 
-    # SECCIÓN INFORM (el environment se define dentro de cada archivo incluido)
-    - name: "[INFORM] Ejecutando revisiones de seguridad"
-      ansible.builtin.include_tasks: 01_kubeadmin.yml
-      when: "'ALL' in report_name or 'kubeadmin' in report_name"
+# SECCIÓN INFORM 
 
-    - name: "[INFORM] Ejecutando revisiones de seguridad"
-      ansible.builtin.include_tasks: 02_log_forwarder.yml
-      when: "'ALL' in report_name or 'logs' in report_name"
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  ansible.builtin.include_tasks: 01_kubeadmin.yml
+  when: "'ALL' in report_name or 'kubeadmin' in report_name"
 
-    - name: "[INFORM] Ejecutando revisiones de seguridad"
-      ansible.builtin.include_tasks: 03_ingress_tls.yml
-      when: "'ALL' in report_name or 'ingress' in report_name"
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  ansible.builtin.include_tasks: 02_log_forwarder.yml
+  when: "'ALL' in report_name or 'logs' in report_name"
 
-    - name: "[INFORM] Ejecutando revisiones de seguridad"
-      ansible.builtin.include_tasks: 04_ldap_tls.yml
-      when: "'ALL' in report_name or 'ldap' in report_name"
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  ansible.builtin.include_tasks: 03_ingress_tls.yml
+  when: "'ALL' in report_name or 'ingress' in report_name"
 
-    - name: "[INFORM] Ejecutando revisiones de seguridad"
-      ansible.builtin.include_tasks: 05_acs_sensor.yml
-      when: "'ALL' in report_name or 'acs' in report_name"
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  ansible.builtin.include_tasks: 04_ldap_tls.yml
+  when: "'ALL' in report_name or 'ldap' in report_name"
 
-    - name: "[INFORM] Ejecutando revisiones de seguridad"
-      ansible.builtin.include_tasks: 06_network_policies.yml
-      when: "'ALL' in report_name or 'network' in report_name"
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  ansible.builtin.include_tasks: 05_acs_sensor.yml
+  when: "'ALL' in report_name or 'acs' in report_name"
 
-    - name: "[INFORM] Ejecutando revisiones de seguridad"
-      ansible.builtin.include_tasks: 07_oauth_timeouts_inform.yml
-      when: "'ALL' in report_name or 'oauth' in report_name"
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  ansible.builtin.include_tasks: 06_network_policies.yml
+  when: "'ALL' in report_name or 'network' in report_name"
 
-    - name: "[INFORM] Ejecutando revisiones de seguridad"
-      ansible.builtin.include_tasks: automatic_remediation_inform.yml
-      when: "'ALL' in report_name or 'remediation' in report_name"
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  ansible.builtin.include_tasks: 07_oauth_timeouts_inform.yml
+  when: "'ALL' in report_name or 'oauth' in report_name"
 
-    # FINALIZACION
-    - name: "[REPORT] Generar y enviar reporte consolidado"
-      ansible.builtin.include_tasks: 99_send_report.yml
-  environment:
-    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
+- name: "[INFORM] Ejecutando revisiones de seguridad"
+  ansible.builtin.include_tasks: automatic_remediation_inform.yml
+  when: "'ALL' in report_name or 'remediation' in report_name"
+
+# FINALIZACION
+
+- name: "[REPORT] Generar y enviar reporte consolidado"
+  ansible.builtin.include_tasks: 99_send_report.yml
 
 # ---------------------------------------------------------
 # LIMPIEZA: Borrar kubeconfig temporal por seguridad

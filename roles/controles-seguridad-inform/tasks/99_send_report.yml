@@ -1,109 +1,105 @@
 ---
-- block:
-    # Crear directorio local y generar el reporte TXT (se sube después a GitLab)
-    - name: "[REPORT] Crear directorio y guardar reporte TXT"
-      block:
-        - name: Crear directorio de reportes local
-          ansible.builtin.file:
-            path: "{{ report_dir }}"
-            state: directory
-        - name: Generar archivo de reporte desde plantilla
-          ansible.builtin.template:
-            src: report_final.j2
-            dest: "{{ report_dir }}/{{ report_file }}.txt"
-      when: dynamic_kubeconfig_path is defined
-
-    # --- Variables de ruta para GitLab (subcarpeta Inform para no mezclar con Enforce) ---
-    - name: "[REPORT] Definir ruta del reporte por cluster en el repo"
-      ansible.builtin.set_fact:
-        cluster_report_dir: "{{ git_workdir }}/reportes_controles_seguridad/{{ target_cluster_name | default('unknown') }}/Inform"
-      when: git_workdir is defined and gitlab_repo_url is defined
-
-    # --- URL de repo con autenticación OAuth2 (no_log para no exponer token) ---
-    - name: "[REPORT] Construir URL de repositorio GitLab con autenticación"
-      ansible.builtin.set_fact:
-        gitlab_repo_url_auth: "{{ 'https://oauth2:' ~ gitlab_token ~ '@' ~ (gitlab_repo_url | regex_replace('^https://', '')) }}"
-      when: git_workdir is defined and gitlab_repo_url is defined and gitlab_token is defined
-      no_log: true
-
-    # --- Preparar entorno Git ---
-    - name: "[REPORT] Eliminar directorio de trabajo Git si existe"
+# Crear directorio local y generar el reporte TXT (se sube después a GitLab)
+- name: "[REPORT] Crear directorio y guardar reporte TXT"
+  block:
+    - name: Crear directorio de reportes local
       ansible.builtin.file:
-        path: "{{ git_workdir }}"
-        state: absent
-      when: git_workdir is defined and gitlab_repo_url is defined
-      delegate_to: localhost
-
-    - name: "[REPORT] Clonar repositorio GitLab"
-      ansible.builtin.git:
-        repo: "{{ gitlab_repo_url_auth }}"
-        dest: "{{ git_workdir }}"
-        version: "{{ gitlab_repo_branch | default('main') }}"
-        force: true
-      when: git_workdir is defined and gitlab_repo_url is defined and gitlab_repo_url_auth is defined
-      delegate_to: localhost
-      no_log: true
-
-    - name: "[REPORT] Crear directorio del cluster (Inform) en el repo"
-      ansible.builtin.file:
-        path: "{{ cluster_report_dir }}"
+        path: "{{ report_dir }}"
         state: directory
-        mode: "0755"
-        recurse: yes
-      when: cluster_report_dir is defined
-      delegate_to: localhost
+    - name: Generar archivo de reporte desde plantilla
+      ansible.builtin.template:
+        src: report_final.j2
+        dest: "{{ report_dir }}/{{ report_file }}.txt"
 
-    # --- Copiar el reporte generado ---
-    - name: "[REPORT] Copiar reporte al repositorio clonado"
-      ansible.builtin.copy:
-        src: "{{ report_dir }}/{{ report_file }}.txt"
-        dest: "{{ cluster_report_dir }}/{{ report_file }}.txt"
-        remote_src: true
-        mode: "0644"
-      when: cluster_report_dir is defined
-      delegate_to: localhost
+# --- Variables de ruta para GitLab (subcarpeta Inform para no mezclar con Enforce) ---
+- name: "[REPORT] Definir ruta del reporte por cluster en el repo"
+  ansible.builtin.set_fact:
+    cluster_report_dir: "{{ git_workdir }}/reportes_controles_seguridad/{{ target_cluster_name | default('unknown') }}/Inform"
+  when: git_workdir is defined and gitlab_repo_url is defined
 
-    # --- Limpieza: mantener solo los 5 archivos más recientes en Inform (no afecta Enforce) ---
-    - name: "[REPORT] Mantener solo los 5 reportes más recientes por cluster (Inform)"
-      ansible.builtin.shell: |
-        cd "{{ cluster_report_dir }}"
-        n=$(ls -t 2>/dev/null | wc -l)
-        if [ "$n" -gt 5 ]; then
-          ls -t | tail -n +6 | xargs rm -f 2>/dev/null || true
-        fi
-      args:
-        executable: /bin/bash
-      when: cluster_report_dir is defined
-      delegate_to: localhost
-      changed_when: false
+# --- URL de repo con autenticación OAuth2 (no_log para no exponer token) ---
+- name: "[REPORT] Construir URL de repositorio GitLab con autenticación"
+  ansible.builtin.set_fact:
+    gitlab_repo_url_auth: "{{ 'https://oauth2:' ~ gitlab_token ~ '@' ~ (gitlab_repo_url | regex_replace('^https://', '')) }}"
+  when: git_workdir is defined and gitlab_repo_url is defined and gitlab_token is defined
+  no_log: true
 
-    # --- Configurar Git y hacer commit + push (robusto ante "nada que commitear") ---
-    - name: "[REPORT] Añadir archivos, commit y push a GitLab"
-      ansible.builtin.shell: |
-        # 1. Configurar identidad
-        git config user.email "ansible-bot@example.com"
-        git config user.name "Ansible Bot"
+# --- Preparar entorno Git ---
+- name: "[REPORT] Eliminar directorio de trabajo Git si existe"
+  ansible.builtin.file:
+    path: "{{ git_workdir }}"
+    state: absent
+  when: git_workdir is defined and gitlab_repo_url is defined
+  delegate_to: localhost
 
-        # 2. Añadir cambios
-        git add .
+- name: "[REPORT] Clonar repositorio GitLab"
+  ansible.builtin.git:
+    repo: "{{ gitlab_repo_url_auth }}"
+    dest: "{{ git_workdir }}"
+    version: "{{ gitlab_repo_branch | default('main') }}"
+    force: true
+  when: git_workdir is defined and gitlab_repo_url is defined and gitlab_repo_url_auth is defined
+  delegate_to: localhost
+  no_log: true
 
-        # 3. Commit (Usando fecha de sistema Linux para evitar error de variables)
-        if git diff --staged --quiet; then
-          echo "NO_CHANGES: No hay cambios para commitear."
-        else
-          git commit -m "Reporte Inform - {{ target_cluster_name | default('unknown') }} - $(date +%Y-%m-%d_%H:%M:%S)"
+- name: "[REPORT] Crear directorio del cluster (Inform) en el repo"
+  ansible.builtin.file:
+    path: "{{ cluster_report_dir }}"
+    state: directory
+    mode: "0755"
+    recurse: yes
+  when: cluster_report_dir is defined
+  delegate_to: localhost
 
-          # 4. Push
-          git push origin HEAD
-        fi
-      args:
-        chdir: "{{ git_workdir }}"
-      environment:
-        GIT_TERMINAL_PROMPT: "0"
-      register: git_push_result
-      changed_when: "'NO_CHANGES' not in git_push_result.stdout"
-      when: git_workdir is defined and gitlab_repo_url is defined
-      delegate_to: localhost
-      no_log: false
+# --- Copiar el reporte generado ---
+- name: "[REPORT] Copiar reporte al repositorio clonado"
+  ansible.builtin.copy:
+    src: "{{ report_dir }}/{{ report_file }}.txt"
+    dest: "{{ cluster_report_dir }}/{{ report_file }}.txt"
+    remote_src: true
+    mode: "0644"
+  when: cluster_report_dir is defined
+  delegate_to: localhost
+
+# --- Limpieza: mantener solo los 5 archivos más recientes en Inform (no afecta Enforce) ---
+- name: "[REPORT] Mantener solo los 5 reportes más recientes por cluster (Inform)"
+  ansible.builtin.shell: |
+    cd "{{ cluster_report_dir }}"
+    n=$(ls -t 2>/dev/null | wc -l)
+    if [ "$n" -gt 5 ]; then
+      ls -t | tail -n +6 | xargs rm -f 2>/dev/null || true
+    fi
+  args:
+    executable: /bin/bash
+  when: cluster_report_dir is defined
+  delegate_to: localhost
+  changed_when: false
+
+# --- Configurar Git y hacer commit + push (robusto ante "nada que commitear") ---
+- name: "[REPORT] Añadir archivos, commit y push a GitLab"
+  ansible.builtin.shell: |
+    # 1. Configurar identidad
+    git config user.email "ansible-bot@example.com"
+    git config user.name "Ansible Bot"
+
+    # 2. Añadir cambios
+    git add .
+
+    # 3. Commit (Usando fecha de sistema Linux para evitar error de variables)
+    if git diff --staged --quiet; then
+      echo "NO_CHANGES: No hay cambios para commitear."
+    else
+      git commit -m "Reporte Inform - {{ target_cluster_name | default('unknown') }} - $(date +%Y-%m-%d_%H:%M:%S)"
+
+      # 4. Push
+      git push origin HEAD
+    fi
+  args:
+    chdir: "{{ git_workdir }}"
   environment:
-    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
+    GIT_TERMINAL_PROMPT: "0"
+  register: git_push_result
+  changed_when: "'NO_CHANGES' not in git_push_result.stdout"
+  when: git_workdir is defined and gitlab_repo_url is defined
+  delegate_to: localhost
+  no_log: false
