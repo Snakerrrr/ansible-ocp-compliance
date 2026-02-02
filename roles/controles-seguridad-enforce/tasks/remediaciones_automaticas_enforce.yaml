@@ -1,64 +1,61 @@
 ---
-- name: "[REMEDY-ENFORCE] Obtener todas las ComplianceRemediations"
-  kubernetes.core.k8s_info:
-    api_version: compliance.openshift.io/v1alpha1
-    kind: ComplianceRemediation
-    namespace: openshift-compliance
-    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
-  register: rem_res
+- block:
+    - name: "[REMEDY-ENFORCE] Obtener todas las ComplianceRemediations"
+      kubernetes.core.k8s_info:
+        api_version: compliance.openshift.io/v1alpha1
+        kind: ComplianceRemediation
+        namespace: openshift-compliance
+        kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
+      register: rem_res
+
+    - name: "[REMEDY-ENFORCE] Aplicar remediaciones de Compliance Operator"
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
+        definition:
+          apiVersion: compliance.openshift.io/v1alpha1
+          kind: ComplianceRemediation
+          metadata:
+            name: "{{ item.metadata.name }}"
+            namespace: "{{ item.metadata.namespace }}"
+          spec:
+            apply: true
+      loop: "{{ rem_res.resources }}"
+      when: >
+        remediation_name | trim | upper == 'ALL' or
+        remediation_name | trim == '' or
+        item.metadata.name in (remediation_name.replace('\n',',').split(',') | map('trim') | list)
+
+    - name: "[REMEDY-ENFORCE] Pausa de sincronización"
+      ansible.builtin.pause:
+        seconds: 8
+
+    - name: "[REMEDY-INFORM] Obtener todas las ComplianceRemediations"
+      kubernetes.core.k8s_info:
+        api_version: compliance.openshift.io/v1alpha1
+        kind: ComplianceRemediation
+        namespace: openshift-compliance
+        kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
+      register: rem_res
+
+    - name: "[REMEDY-INFORM] Formatear reporte de remediaciones detectadas"
+      ansible.builtin.set_fact:
+        remedy_resultado: |-
+          TOTAL REMEDIACIONES DETECTADAS: {{ rem_res.resources | length }}
+
+          LISTADO DE COMPLIANCE REMEDIATIONS:
+          ---------------------------------------------
+          {% set results = [] -%}
+          {% if rem_res.resources | length == 0 %}
+            Scanner Compliance no ejecutado
+          {% else %}
+          {% for r in rem_res.resources | sort(attribute='metadata.name') -%}
+            {% set _ = results.append(
+              'Nombre: ' + r.metadata.name +
+              '\nEstado Actual: ' + (r.status.applicationState | default('PENDIENTE'))
+            ) -%}
+          {% endfor -%}
+          {{ results | join('\n---------------------------------------------\n') }}
+          {% endif %}
   environment:
     KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
-
-- name: "[REMEDY-ENFORCE] Aplicar remediaciones de Compliance Operator"
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
-    definition:
-      apiVersion: compliance.openshift.io/v1alpha1
-      kind: ComplianceRemediation
-      metadata:
-        name: "{{ item.metadata.name }}"
-        namespace: "{{ item.metadata.namespace }}"
-      spec:
-        apply: true
-  loop: "{{ rem_res.resources }}"
-  when: >
-    remediation_name | trim | upper == 'ALL' or 
-    remediation_name | trim == '' or 
-    item.metadata.name in (remediation_name.replace('\n',',').split(',') | map('trim') | list)
-  environment:
-    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
-
-- name: "[REMEDY-ENFORCE] Pausa de sincronización"
-  ansible.builtin.pause:
-    seconds: 8
-
-- name: "[REMEDY-INFORM] Obtener todas las ComplianceRemediations"
-  kubernetes.core.k8s_info:
-    api_version: compliance.openshift.io/v1alpha1
-    kind: ComplianceRemediation
-    namespace: openshift-compliance
-    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
-  register: rem_res
-  environment:
-    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
-
-- name: "[REMEDY-INFORM] Formatear reporte de remediaciones detectadas"
-  ansible.builtin.set_fact:
-    remedy_resultado: |-
-      TOTAL REMEDIACIONES DETECTADAS: {{ rem_res.resources | length }}
-
-      LISTADO DE COMPLIANCE REMEDIATIONS:
-      ---------------------------------------------
-      {% set results = [] -%}
-      {% if rem_res.resources | length == 0 %}
-        Scanner Compliance no ejecutado
-      {% else %}
-      {% for r in rem_res.resources | sort(attribute='metadata.name') -%}
-        {% set _ = results.append(
-          'Nombre: ' + r.metadata.name + 
-          '\nEstado Actual: ' + (r.status.applicationState | default('PENDIENTE'))
-        ) -%}
-      {% endfor -%}
-      {{ results | join('\n---------------------------------------------\n') }}
-      {% endif %}

@@ -1,90 +1,87 @@
 ---
-- name: "[OAUTH-ENFORCE] Obtener configuración actual"
-  kubernetes.core.k8s_info:
-    api_version: "{{ item.api }}"
-    kind: "{{ item.kind }}"
-    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
-  loop:
-    - { api: "config.openshift.io/v1", kind: "OAuth" }
-    - { api: "oauth.openshift.io/v1", kind: "OAuthClient" }
-  register: oauth_res
+- block:
+    - name: "[OAUTH-ENFORCE] Obtener configuración actual"
+      kubernetes.core.k8s_info:
+        api_version: "{{ item.api }}"
+        kind: "{{ item.kind }}"
+        kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
+      loop:
+        - { api: "config.openshift.io/v1", kind: "OAuth" }
+        - { api: "oauth.openshift.io/v1", kind: "OAuthClient" }
+      register: oauth_res
+
+    - name: "[OAUTH-ENFORCE] Procesar filtro de clientes"
+      ansible.builtin.set_fact:
+        enforce_target_list: >-
+          {{
+            oauth_client.replace('\n', ',').split(',')
+            | map('trim')
+            | reject('equalto', '')
+            | list
+          }}
+      when: oauth_client is defined and oauth_client | trim | upper != 'ALL' and oauth_client | trim != ''
+
+    - name: "[OAUTH-ENFORCE] Aplicar remediación de Timeouts"
+      block:
+        - name: "Parchear OAuth Global (10m0s)"
+          kubernetes.core.k8s:
+            state: patched
+            api_version: config.openshift.io/v1
+            kind: OAuth
+            name: cluster
+            definition: { spec: { tokenConfig: { accessTokenInactivityTimeout: "10m0s" } } }
+            kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
+          register: global_patch_res
+
+        - name: "Parchear OAuthClients seleccionados (600s)"
+          kubernetes.core.k8s:
+            state: patched
+            api_version: oauth.openshift.io/v1
+            kind: OAuthClient
+            name: "{{ item.metadata.name }}"
+            definition: { accessTokenInactivityTimeoutSeconds: 600 }
+            kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
+          loop: "{{ oauth_res.results[1].resources }}"
+          when: >
+            (oauth_client | default('ALL') | trim | upper == 'ALL') or
+            (oauth_client is defined and item.metadata.name in oauth_client)
+          register: client_patch_res
+
+        - name: "[OAUTH-ENFORCE] Generar resumen con respaldo"
+          ansible.builtin.set_fact:
+            oauth_enforce_resultado: |-
+              ACCIONES REALIZADAS (ENFORCE - OAUTH):
+              ---------------------------------------------
+              1. CONFIGURACIÓN GLOBAL:
+                 Estado: {{ 'ACTUALIZADO' if global_patch_res.changed else 'SIN CAMBIOS' }}
+
+              2. CLIENTES OAUTH MODIFICADOS:
+              {% set changed_list = [] -%}
+              {# Recorremos los resultados para encontrar los que cambiaron #}
+              {% for res in client_patch_res.results -%}
+                {% if res.get('changed', False) -%}
+                  {# Guardamos un objeto con el nombre y el YAML original completo #}
+                  {% set _ = changed_list.append({
+                    'name': res.item.metadata.name,
+                    'original_yaml': res.item | to_nice_yaml(indent=2)
+                  }) -%}
+                {% endif -%}
+              {% endfor -%}
+
+              {% if changed_list | length > 0 %}
+              Se actualizaron {{ changed_list | length }} clientes a 600s.
+
+              DETALLE Y RESPALDO DE CONFIGURACIÓN PREVIA:
+              {% for item in changed_list %}
+              #######################################################
+              CLIENTE: {{ item.name }}
+              -------------------------------------------------------
+              [RESPALDO YAML ORIGINAL]
+              {{ item.original_yaml }}
+              #######################################################
+              {% endfor %}
+              {% else %}
+              No hubo cambios en los clientes (ya estaban configurados o ninguno cumplía el filtro).
+              {% endif %}
   environment:
     KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
-
-- name: "[OAUTH-ENFORCE] Procesar filtro de clientes"
-  ansible.builtin.set_fact:
-    enforce_target_list: >-
-      {{ 
-        oauth_client.replace('\n', ',').split(',') 
-        | map('trim') 
-        | reject('equalto', '') 
-        | list 
-      }}
-  when: oauth_client is defined and oauth_client | trim | upper != 'ALL' and oauth_client | trim != ''
-
-- name: "[OAUTH-ENFORCE] Aplicar remediación de Timeouts"
-  block:
-    - name: "Parchear OAuth Global (10m0s)"
-      kubernetes.core.k8s:
-        state: patched
-        api_version: config.openshift.io/v1
-        kind: OAuth
-        name: cluster
-        definition: { spec: { tokenConfig: { accessTokenInactivityTimeout: "10m0s" } } }
-        kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
-      register: global_patch_res
-      environment:
-        KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
-
-    - name: "Parchear OAuthClients seleccionados (600s)"
-      kubernetes.core.k8s:
-        state: patched
-        api_version: oauth.openshift.io/v1
-        kind: OAuthClient
-        name: "{{ item.metadata.name }}"
-        definition: { accessTokenInactivityTimeoutSeconds: 600 }
-        kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
-      loop: "{{ oauth_res.results[1].resources }}"
-      environment:
-        KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
-      when: >
-        (oauth_client | default('ALL') | trim | upper == 'ALL') or 
-        (oauth_client is defined and item.metadata.name in oauth_client)
-      register: client_patch_res
-
-    - name: "[OAUTH-ENFORCE] Generar resumen con respaldo"
-      ansible.builtin.set_fact:
-        oauth_enforce_resultado: |-
-          ACCIONES REALIZADAS (ENFORCE - OAUTH):
-          ---------------------------------------------
-          1. CONFIGURACIÓN GLOBAL:
-             Estado: {{ 'ACTUALIZADO' if global_patch_res.changed else 'SIN CAMBIOS' }}
-          
-          2. CLIENTES OAUTH MODIFICADOS:
-          {% set changed_list = [] -%}
-          {# Recorremos los resultados para encontrar los que cambiaron #}
-          {% for res in client_patch_res.results -%}
-            {% if res.get('changed', False) -%}
-              {# Guardamos un objeto con el nombre y el YAML original completo #}
-              {% set _ = changed_list.append({
-                'name': res.item.metadata.name,
-                'original_yaml': res.item | to_nice_yaml(indent=2)
-              }) -%}
-            {% endif -%}
-          {% endfor -%}
-          
-          {% if changed_list | length > 0 %}
-          Se actualizaron {{ changed_list | length }} clientes a 600s.
-          
-          DETALLE Y RESPALDO DE CONFIGURACIÓN PREVIA:
-          {% for item in changed_list %}
-          #######################################################
-          CLIENTE: {{ item.name }}
-          -------------------------------------------------------
-          [RESPALDO YAML ORIGINAL]
-          {{ item.original_yaml }}
-          #######################################################
-          {% endfor %}
-          {% else %}
-          No hubo cambios en los clientes (ya estaban configurados o ninguno cumplía el filtro).
-          {% endif %}

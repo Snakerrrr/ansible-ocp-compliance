@@ -1,31 +1,32 @@
 ---
-- name: "[NETPOL] Obtener Datos"
-  kubernetes.core.k8s_info:
-    api_version: "{{ item.api }}"
-    kind: "{{ item.kind }}"
-    kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
-  loop:
-    - { api: "v1", kind: "Namespace" }
-    - { api: "networking.k8s.io/v1", kind: "NetworkPolicy" }
-  register: net_res
+- block:
+    - name: "[NETPOL] Obtener Datos"
+      kubernetes.core.k8s_info:
+        api_version: "{{ item.api }}"
+        kind: "{{ item.kind }}"
+        kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
+      loop:
+        - { api: "v1", kind: "Namespace" }
+        - { api: "networking.k8s.io/v1", kind: "NetworkPolicy" }
+      register: net_res
+
+    - name: "[NETPOL] Procesar Listados"
+      ansible.builtin.set_fact:
+        netpol_protegidos: |-
+          {% set lines = [] -%}
+          {% set target_ns = net_res.results[0].resources | map(attribute='metadata.name') | reject('match', system_ns_regex) | list -%}
+          {% for ns in target_ns | sort -%}
+            {% set ns_pols = net_res.results[1].resources | selectattr('metadata.namespace', 'equalto', ns) | map(attribute='metadata.name') | list -%}
+            {% if ns_pols | length > 0 -%}{% set _ = lines.append('Namespace: ' + ns + ' (Políticas: ' + ns_pols | join(', ') + ')') -%}{% endif -%}
+          {% endfor -%}
+          {{ lines | join('\n') if lines | length > 0 else 'No se encontraron namespaces protegidos.' }}
+        netpol_expuestos: |-
+          {% set lines = [] -%}
+          {% set target_ns = net_res.results[0].resources | map(attribute='metadata.name') | reject('match', system_ns_regex) | list -%}
+          {% for ns in target_ns | sort -%}
+            {% set ns_pols = net_res.results[1].resources | selectattr('metadata.namespace', 'equalto', ns) | list -%}
+            {% if ns_pols | length == 0 -%}{% set _ = lines.append('Namespace: ' + ns) -%}{% endif -%}
+          {% endfor -%}
+          {{ lines | join('\n') if lines | length > 0 else 'Todos los namespaces están protegidos.' }}
   environment:
     KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
-
-- name: "[NETPOL] Procesar Listados"
-  ansible.builtin.set_fact:
-    netpol_protegidos: |-
-      {% set lines = [] -%}
-      {% set target_ns = net_res.results[0].resources | map(attribute='metadata.name') | reject('match', system_ns_regex) | list -%}
-      {% for ns in target_ns | sort -%}
-        {% set ns_pols = net_res.results[1].resources | selectattr('metadata.namespace', 'equalto', ns) | map(attribute='metadata.name') | list -%}
-        {% if ns_pols | length > 0 -%}{% set _ = lines.append('Namespace: ' + ns + ' (Políticas: ' + ns_pols | join(', ') + ')') -%}{% endif -%}
-      {% endfor -%}
-      {{ lines | join('\n') if lines | length > 0 else 'No se encontraron namespaces protegidos.' }}
-    netpol_expuestos: |-
-      {% set lines = [] -%}
-      {% set target_ns = net_res.results[0].resources | map(attribute='metadata.name') | reject('match', system_ns_regex) | list -%}
-      {% for ns in target_ns | sort -%}
-        {% set ns_pols = net_res.results[1].resources | selectattr('metadata.namespace', 'equalto', ns) | list -%}
-        {% if ns_pols | length == 0 -%}{% set _ = lines.append('Namespace: ' + ns) -%}{% endif -%}
-      {% endfor -%}
-      {{ lines | join('\n') if lines | length > 0 else 'Todos los namespaces están protegidos.' }}
