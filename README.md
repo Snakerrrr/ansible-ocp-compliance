@@ -569,3 +569,50 @@ reportes_controles_seguridad/
    ```bash
    oc get pvc -n openshift-compliance
    ```
+
+---
+
+## Consideraciones de cara al futuro
+
+Recomendaciones para el cliente a partir del flujo actual de los playbooks, las variables utilizadas y la integración con AAP y GitLab.
+
+### Variables y configuración
+
+- **Centralizar variables en AAP**: Usar un único inventario o conjunto de Extra Variables (por Job Template o por proyecto) para `git_workdir`, `gitlab_repo_url`, `gitlab_repo_branch`, etc., y evitar duplicar valores entre el orquestador, Inform y Enforce.
+- **Catálogo de variables**: Mantener un documento interno (o ampliar esta guía) con todas las variables, si son obligatorias u opcionales, y valores recomendados por entorno (desarrollo, staging, producción).
+- **Survey**: Mantener `survey_target_clusters` con la misma convención que los **namespaces** de los managed clusters en el Hub (ACM); documentar la lista de nombres válidos para reducir errores de “kubeconfig no encontrado”.
+
+### Seguridad
+
+- **Tokens GitLab**: Usar tokens con permisos mínimos (p. ej. solo `write_repository` para el repo de reportes). Establecer una política de **rotación periódica** y actualizar la credencial en AAP.
+- **Credencial del Hub**: La credencial OpenShift/Kubernetes del Hub debe tener solo el alcance necesario (lectura de secrets en los namespaces de los managed clusters). Evitar reutilizar la misma credencial para otros fines si es posible segregar.
+- **Repo de reportes**: Valorar ramas protegidas o permisos de escritura limitados al servicio/bot que hace push, para que el contenido del repo sea solo el generado por la automatización.
+
+### Escalabilidad y rendimiento
+
+- **Muchos clusters**: Los playbooks iteran por cluster en **secuencia**. Si el número de clusters crece mucho, valorar ejecutar varios Job Templates en paralelo (p. ej. particionando la lista de clusters) o revisar opciones de AAP para paralelismo.
+- **Retención de reportes**: La retención de **5 archivos** por carpeta (`inform/`, `enforce/` por cluster) está fija en el código. Si se necesita más o menos historial, conviene parametrizarlo como variable (p. ej. `report_retention_count`) en los roles.
+- **Tamaño del repo GitLab**: Si se acumulan muchos ZIPs en `reports/` (orquestador) o muchos TXT en `reportes_controles_seguridad/`, definir una política de archivado o limpieza (p. ej. borrar o mover reportes antiguos) para no inflar el repo.
+
+### Operación y mantenimiento
+
+- **Monitoreo**: Configurar alertas en AAP ante fallos de job (push a GitLab, extracción de kubeconfig, errores de módulos `kubernetes.core`). Revisar periódicamente que los reportes lleguen al repo en la estructura esperada.
+- **Execution Environment**: Mantener el EE actualizado (colecciones Ansible, `oc`, dependencias) y probar los playbooks tras actualizaciones de AAP o del EE.
+- **Nombres de clusters**: Cualquier cambio en los nombres de managed clusters en ACM debe reflejarse en `survey_target_clusters` (o en la fuente que alimente esa variable) para que la extracción del kubeconfig siga funcionando.
+
+### Evolución del producto
+
+- **Nuevos controles (Inform/Enforce)**: Añadir nuevas revisiones o remediaciones siguiendo el patrón actual: nuevo archivo de tareas (p. ej. `08_nuevo_control.yml`), incluido desde `process_cluster.yml`, y actualización de `report_name` o `enforce_list` en defaults y documentación.
+- **Nuevos estándares de compliance**: Si se incorporan estándares distintos a CIS 1.7 y PCI-DSS 4.0, actualizar los filtros de PVCs en el rol `compliance_export_html` (y, si aplica, la documentación de estándares soportados).
+- **Compatibilidad con AAP**: En cada upgrade mayor de AAP, comprobar que las credenciales (OpenShift/Kubernetes, GitLab) y los Job Templates sigan funcionando y que no cambie el comportamiento de inyección de variables (p. ej. `K8S_AUTH_*`, `KUBECONFIG`).
+
+### Repositorio GitLab
+
+- **Rama por defecto**: Dejar alineado `gitlab_repo_branch` con la rama por defecto del repo (p. ej. `main` o `master`) para evitar confusiones y conflictos.
+- **Estructura de carpetas**: No eliminar manualmente las carpetas `reportes_controles_seguridad/` ni `reports/` si los jobs las recrean o escriben en ellas; en caso de reestructuración del repo, actualizar las rutas en los roles (`cluster_report_dir`, rutas del orquestador) y la documentación.
+
+### Documentación y formación
+
+- **Runbooks**: Tener procedimientos cortos para errores frecuentes (kubeconfig no encontrado, push fallido, variable indefinida, PVCs no encontrados), enlazando con la sección Troubleshooting de este README.
+- **Guía de AAP**: Mantener `playbooks/GUIA_ACTUALIZACION_AAP_GITLAB.md` actualizada cuando se añadan variables, credenciales o pasos en los Job Templates.
+- **Trazabilidad**: Los mensajes de commit en GitLab incluyen tipo de reporte (Inform/Enforce), nombre de cluster y fecha; usar ese historial para auditoría y resolución de incidencias.
