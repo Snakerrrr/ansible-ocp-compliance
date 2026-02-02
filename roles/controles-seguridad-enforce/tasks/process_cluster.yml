@@ -31,6 +31,41 @@
         - kubeconfig_from_hub.stdout != ''
         - kubeconfig_from_hub.stdout | length > 100
 
+# Verificar que el kubeconfig existe en el controlador y exponer la ruta al host que ejecuta las tareas
+- name: "[CONN] Verificar que el kubeconfig del spoke existe en el controlador"
+  ansible.builtin.stat:
+    path: "/tmp/kubeconfig-{{ target_cluster_name }}"
+  register: kubeconfig_file_stat
+  delegate_to: localhost
+  when: target_cluster_name is defined and target_cluster_name | length > 0
+
+- name: "[CONN] Fallar si no se pudo extraer el kubeconfig del spoke"
+  ansible.builtin.fail:
+    msg: |
+      No se pudo obtener el kubeconfig del cluster '{{ target_cluster_name }}' desde el Hub.
+      Verifique:
+      1) Credencial del HUB ACM asociada al Job Template (debe permitir 'oc' contra el Hub).
+      2) El secret admin-kubeconfig existe en el namespace '{{ target_cluster_name }}' en el Hub:
+         oc get secret admin-kubeconfig -n {{ target_cluster_name }}
+      3) Los nombres en survey_target_clusters coinciden con los nombres de los namespaces de los managed clusters en el Hub.
+  when:
+    - target_cluster_name is defined
+    - target_cluster_name | length > 0
+    - not kubeconfig_file_stat.stat.exists | default(false)
+
+- name: "[CONN] Exponer ruta del kubeconfig al host que ejecuta las tareas"
+  ansible.builtin.set_fact:
+    dynamic_kubeconfig_path: "/tmp/kubeconfig-{{ target_cluster_name }}"
+  when:
+    - target_cluster_name is defined
+    - target_cluster_name | length > 0
+    - kubeconfig_file_stat.stat.exists | default(false)
+
+- name: "[CONN] Debug - Cluster y kubeconfig a usar"
+  ansible.builtin.debug:
+    msg: "Cluster: {{ target_cluster_name | default('N/A') }} | Kubeconfig: {{ dynamic_kubeconfig_path | default('contexto por defecto') }}"
+  when: target_cluster_name is defined
+
 - name: "[INIT] Obtener infraestructura del cluster"
   kubernetes.core.k8s_info:
     api_version: config.openshift.io/v1
