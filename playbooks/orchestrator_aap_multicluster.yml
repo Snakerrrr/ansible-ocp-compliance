@@ -172,20 +172,6 @@
         - all_zip_files is defined
         - all_zip_files.files | length > 0
 
-    # Solo el ZIP más reciente por cluster (evita commit masivo de históricos)
-    - name: Obtener el ZIP más reciente por cluster (ordenado por mtime descendente)
-      ansible.builtin.set_fact:
-        most_recent_zips: "{{ most_recent_zips | default([]) + [ (all_zip_files.files | selectattr('path', 'match', '.*/' ~ cluster ~ '/.*') | sort(attribute='mtime', reverse=true) | list)[0] ] }}"
-      loop: "{{ clusters_with_reports | default([]) }}"
-      when:
-        - do_push_gitlab | bool
-        - all_zip_files is defined
-        - all_zip_files.files | length > 0
-        - clusters_with_reports is defined
-        - (all_zip_files.files | selectattr('path', 'match', '.*/' ~ item ~ '/.*') | list) | length > 0
-      vars:
-        cluster: "{{ item }}"
-
     # URL con autenticación OAuth2 (token) para clone/push (no_log para no exponer token)
     - name: Construir URL de repositorio GitLab con autenticación
       ansible.builtin.set_fact:
@@ -211,51 +197,29 @@
         - all_zip_files.files | length > 0
       no_log: true
 
-    - name: Crear directorio de reportes por cluster dentro del repo
+    - name: Crear directorio de reportes dentro del repo
       ansible.builtin.file:
-        path: "{{ git_workdir }}/reports/{{ item }}"
+        path: "{{ git_workdir }}/reports"
         state: directory
         mode: "0755"
-        recurse: yes
-      loop: "{{ clusters_with_reports | default([]) }}"
       when:
         - do_push_gitlab | bool
         - all_zip_files is defined
         - all_zip_files.files | length > 0
-        - clusters_with_reports is defined
 
-    - name: Copiar solo el ZIP más reciente por cluster al repositorio clonado
+    - name: Copiar reportes ZIP al repositorio clonado
       ansible.builtin.copy:
         src: "{{ item.path }}"
-        dest: "{{ git_workdir }}/reports/{{ (item.path.split('/')[-2]) }}/{{ item.path | basename }}"
+        dest: "{{ git_workdir }}/reports/{{ item.path | basename }}"
         remote_src: true
         mode: "0644"
-      loop: "{{ most_recent_zips | default([]) }}"
+      loop: "{{ all_zip_files.files }}"
       loop_control:
         label: "{{ item.path | basename }}"
       when:
         - do_push_gitlab | bool
-        - most_recent_zips is defined
-        - most_recent_zips | length > 0
-
-    # Retención: mantener solo los 5 archivos más recientes por cluster (evita duplicados en el repo)
-    - name: Limpiar reportes antiguos en reports/ por cluster (máximo 5 por cluster)
-      ansible.builtin.shell: |
-        cd "{{ git_workdir }}/reports/{{ item }}"
-        n=$(ls -tp 2>/dev/null | grep -v '/$' | wc -l)
-        if [ "$n" -gt 5 ]; then
-          ls -tp | grep -v '/$' | tail -n +6 | xargs -I {} rm -- {}
-        fi
-      args:
-        executable: /bin/bash
-      loop: "{{ clusters_with_reports | default([]) }}"
-      when:
-        - do_push_gitlab | bool
-        - most_recent_zips is defined
-        - most_recent_zips | length > 0
-        - clusters_with_reports is defined
-      changed_when: false
-      delegate_to: localhost
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
 
     - name: Configurar usuario Git para commit
       ansible.builtin.command:
