@@ -1,17 +1,19 @@
 ---
 # ---------------------------------------------------------
 # CONEXIÓN HUB-TO-SPOKE: Extraer kubeconfig del managed cluster desde el Hub
-# (Dos pasos: oc sin pipe + b64decode en Ansible para evitar "base64: invalid input")
+# (Auth explícita: K8S_AUTH_API_KEY y K8S_AUTH_HOST inyectados por AAP)
 # ---------------------------------------------------------
-- name: "[INIT] Obtener RAW admin-kubeconfig (Sin Pipe)"
+- name: "[INIT] Obtener RAW admin-kubeconfig (Con Auth Explícita)"
   ansible.builtin.command: >
-    oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}'
-  environment:
-    # Usamos lookup para pasar la credencial del AAP explícitamente
-    KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') }}"
+    oc get secret admin-kubeconfig
+    -n {{ target_cluster_name }}
+    -o jsonpath='{.data.kubeconfig}'
+    --token="{{ lookup('env', 'K8S_AUTH_API_KEY') }}"
+    --server="{{ lookup('env', 'K8S_AUTH_HOST') }}"
+    --insecure-skip-tls-verify
   delegate_to: localhost
   register: raw_secret_output
-  ignore_errors: true # Capturamos el error para mostrarlo limpio
+  ignore_errors: true
 
 - name: "[DEBUG] Ver error real de OC (Si falló)"
   ansible.builtin.debug:
@@ -23,12 +25,11 @@
 
 - name: "[INIT] Validar éxito"
   ansible.builtin.fail:
-    msg: "FATAL: No se pudo obtener el secreto. Ver debug arriba."
+    msg: "FATAL: No se pudo obtener el secreto. El token del AAP no funcionó o el secreto no existe."
   when: raw_secret_output.rc != 0
 
 - name: "[INIT] Guardar Kubeconfig (Decodificado por Ansible)"
   ansible.builtin.copy:
-    # Aquí hacemos el decode de forma segura
     content: "{{ raw_secret_output.stdout | b64decode }}"
     dest: "/tmp/kubeconfig-{{ target_cluster_name }}"
     mode: '0600'
