@@ -39,6 +39,20 @@
   delegate_to: localhost
   when: target_cluster_name is defined and target_cluster_name | length > 0
 
+- name: "[CONN] Mostrar motivo del fallo de extracción (diagnóstico)"
+  ansible.builtin.debug:
+    msg: |
+      Diagnóstico extracción kubeconfig para '{{ target_cluster_name }}':
+      - Comando ejecutado (en controlador): oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}' | base64 -d
+      - Código de salida (rc): {{ kubeconfig_from_hub.rc | default('N/A') }}
+      - Longitud de stdout (bytes): {{ (kubeconfig_from_hub.stdout | default('')) | length }}
+      - stderr (mensaje de error): {{ (kubeconfig_from_hub.stderr | default('')) | trim }}
+      Si stderr está vacío y rc=0 pero stdout corto, el secret puede no tener la clave 'kubeconfig' o el namespace no existe en el Hub.
+  when:
+    - target_cluster_name is defined
+    - target_cluster_name | length > 0
+    - not kubeconfig_file_stat.stat.exists | default(false)
+
 - name: "[CONN] Fallar si no se pudo extraer el kubeconfig del spoke"
   ansible.builtin.fail:
     msg: |
