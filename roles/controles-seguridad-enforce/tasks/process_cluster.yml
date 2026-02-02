@@ -1,31 +1,40 @@
 ---
 # ---------------------------------------------------------
 # CONEXIÓN HUB-TO-SPOKE: Extraer kubeconfig del managed cluster desde el Hub
-# (Lógica Orchestrator - shell con credencial AAP visible vía KUBECONFIG)
+# (Dos pasos: oc sin pipe + b64decode en Ansible para evitar "base64: invalid input")
 # ---------------------------------------------------------
-- name: "[INIT] Buscar admin-kubeconfig en el Hub (Lógica Orchestrator)"
-  ansible.builtin.shell: |
-    oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}' 2>&1 | base64 -d || echo ""
-  register: kubeconfig_from_admin
-  delegate_to: localhost
-  changed_when: false
-  # Aseguramos que el comando 'oc' vea la credencial del AAP
+- name: "[INIT] Obtener RAW admin-kubeconfig (Sin Pipe)"
+  ansible.builtin.command: >
+    oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}'
   environment:
+    # Usamos lookup para pasar la credencial del AAP explícitamente
     KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') }}"
+  delegate_to: localhost
+  register: raw_secret_output
+  ignore_errors: true # Capturamos el error para mostrarlo limpio
 
-- name: "[INIT] Validar que se obtuvo credencial"
+- name: "[DEBUG] Ver error real de OC (Si falló)"
+  ansible.builtin.debug:
+    msg:
+      - "El comando OC falló. Mensaje de error real:"
+      - "{{ raw_secret_output.stderr }}"
+      - "{{ raw_secret_output.stdout }}"
+  when: raw_secret_output.rc != 0
+
+- name: "[INIT] Validar éxito"
   ansible.builtin.fail:
-    msg: "FATAL: No se pudo extraer el kubeconfig para '{{ target_cluster_name }}'. El secreto no existe o el Hub no es accesible."
-  when: kubeconfig_from_admin.stdout | length < 100
+    msg: "FATAL: No se pudo obtener el secreto. Ver debug arriba."
+  when: raw_secret_output.rc != 0
 
-- name: "[INIT] Guardar Kubeconfig temporal"
+- name: "[INIT] Guardar Kubeconfig (Decodificado por Ansible)"
   ansible.builtin.copy:
-    content: "{{ kubeconfig_from_admin.stdout }}"
+    # Aquí hacemos el decode de forma segura
+    content: "{{ raw_secret_output.stdout | b64decode }}"
     dest: "/tmp/kubeconfig-{{ target_cluster_name }}"
     mode: '0600'
   delegate_to: localhost
 
-- name: "[INIT] Definir variable de ruta de conexión"
+- name: "[INIT] Definir variable de ruta"
   ansible.builtin.set_fact:
     dynamic_kubeconfig_path: "/tmp/kubeconfig-{{ target_cluster_name }}"
 
