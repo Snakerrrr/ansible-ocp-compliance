@@ -1,25 +1,25 @@
 ---
 # -------------------------------------------------------------------------
 # EXTRACCIÓN DE KUBECONFIG (Modelo Orchestrator - AAP Native)
+# Sin pipe a base64 para capturar el error real de OpenShift; decodificación con Ansible.
 # -------------------------------------------------------------------------
-- name: "[INIT] Extraer admin-kubeconfig del Hub"
-  ansible.builtin.shell: |
-    oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}' 2>&1 | base64 -d || echo ""
-  register: kubeconfig_from_hub
+- name: "[INIT] Obtener Secret RAW (Sin Pipe para ver errores)"
+  ansible.builtin.shell: >
+    oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}'
+  register: raw_secret_output
   delegate_to: localhost
-  changed_when: false
+  ignore_errors: true
   environment:
-    # Clave del éxito: Usar la credencial inyectada en el entorno local
     KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') }}"
 
 - name: "[INIT] Validar extracción"
   ansible.builtin.fail:
-    msg: "FATAL: No se pudo obtener el kubeconfig para '{{ target_cluster_name }}'. Verifique el nombre del cluster y acceso al Hub."
-  when: kubeconfig_from_hub.stdout | length < 100
+    msg: "FATAL: No se pudo obtener el kubeconfig para '{{ target_cluster_name }}'. Verifique el nombre del cluster y acceso al Hub. Salida: {{ raw_secret_output.stdout | default('') | trim }} {{ raw_secret_output.stderr | default('') | trim }}"
+  when: raw_secret_output.stdout | default('') | length < 100
 
-- name: "[INIT] Guardar Kubeconfig temporal para el Spoke"
+- name: "[INIT] Decodificar y guardar Kubeconfig temporal para el Spoke"
   ansible.builtin.copy:
-    content: "{{ kubeconfig_from_hub.stdout }}"
+    content: "{{ raw_secret_output.stdout | b64decode }}"
     dest: "/tmp/kubeconfig-{{ target_cluster_name }}"
     mode: '0600'
   delegate_to: localhost
