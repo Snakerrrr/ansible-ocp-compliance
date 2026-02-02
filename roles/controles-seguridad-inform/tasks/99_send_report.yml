@@ -77,6 +77,8 @@
   when: cluster_report_dir is defined
   delegate_to: localhost
   changed_when: false
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 # --- Configurar Git y hacer commit + push (robusto ante "nada que commitear") ---
 - name: "[REPORT] Añadir archivos, commit y push a GitLab"
@@ -101,6 +103,7 @@
     chdir: "{{ git_workdir }}"
   environment:
     GIT_TERMINAL_PROMPT: "0"
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
   register: git_push_result
   changed_when: "'NO_CHANGES' not in git_push_result.stdout"
   when: git_workdir is defined and gitlab_repo_url is defined
