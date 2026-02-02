@@ -8,6 +8,8 @@
     - { api: "config.openshift.io/v1", kind: "OAuth" }
     - { api: "oauth.openshift.io/v1", kind: "OAuthClient" }
   register: oauth_res
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: "[OAUTH-ENFORCE] Procesar filtro de clientes"
   ansible.builtin.set_fact:
@@ -31,6 +33,8 @@
         definition: { spec: { tokenConfig: { accessTokenInactivityTimeout: "10m0s" } } }
         kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
       register: global_patch_res
+      environment:
+        KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
     - name: "Parchear OAuthClients seleccionados (600s)"
       kubernetes.core.k8s:
@@ -41,6 +45,8 @@
         definition: { accessTokenInactivityTimeoutSeconds: 600 }
         kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
       loop: "{{ oauth_res.results[1].resources }}"
+      environment:
+        KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
       when: >
         (oauth_client | default('ALL') | trim | upper == 'ALL') or 
         (oauth_client is defined and item.metadata.name in oauth_client)

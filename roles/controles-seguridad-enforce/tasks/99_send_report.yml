@@ -10,6 +10,9 @@
       ansible.builtin.template:
         src: report_final.j2
         dest: "{{ report_dir }}/{{ report_file }}.txt"
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
+  when: dynamic_kubeconfig_path is defined
 
 # --- Variables de ruta para GitLab (subcarpeta Enforce para no mezclar con Inform) ---
 - name: "[REPORT] Definir ruta del reporte por cluster en el repo"

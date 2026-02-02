@@ -8,6 +8,8 @@
     - { api: "config.openshift.io/v1", kind: "OAuth" }       # results[0]
     - { api: "oauth.openshift.io/v1", kind: "OAuthClient" } # results[1]
   register: oauth_res
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: "[OAUTH-INFORM] Formatear listado completo de clientes"
   ansible.builtin.set_fact:

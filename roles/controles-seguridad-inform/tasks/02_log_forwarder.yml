@@ -5,6 +5,8 @@
     namespace: openshift-logging
     kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: clf_info
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: "[LOGS] Procesar resultado"
   ansible.builtin.set_fact:

@@ -44,6 +44,8 @@
         name: cluster
         kubeconfig: "{{ dynamic_kubeconfig_path }}"
       register: infra_info
+      environment:
+        KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
     - name: "[INIT] Definir variables de ejecución"
       ansible.builtin.set_fact:

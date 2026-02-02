@@ -10,6 +10,8 @@
     - { api: "v1", kind: "Secret", name: "kubeadmin", ns: "kube-system" }
     - { api: "config.openshift.io/v1", kind: "OAuth", name: "cluster" }
   register: kube_oauth_res
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: "[KUBEADMIN] Procesar resultado"
   ansible.builtin.set_fact:

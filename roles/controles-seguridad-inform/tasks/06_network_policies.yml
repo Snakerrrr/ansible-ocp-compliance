@@ -8,6 +8,8 @@
     - { api: "v1", kind: "Namespace" }
     - { api: "networking.k8s.io/v1", kind: "NetworkPolicy" }
   register: net_res
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: "[NETPOL] Procesar Listados"
   ansible.builtin.set_fact:

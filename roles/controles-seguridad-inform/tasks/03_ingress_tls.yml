@@ -7,6 +7,8 @@
     namespace: openshift-ingress-operator
     kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: ingress_info
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: "[INGRESS] Definir texto resultado"
   ansible.builtin.set_fact:

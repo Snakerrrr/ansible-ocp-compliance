@@ -6,6 +6,8 @@
     namespace: openshift-compliance
     kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: rem_res
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: "[REMEDY-INFORM] Formatear reporte de remediaciones detectadas"
   ansible.builtin.set_fact:

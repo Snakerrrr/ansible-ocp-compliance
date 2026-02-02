@@ -6,6 +6,8 @@
     namespace: openshift-compliance
     kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: rem_res
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: "[REMEDY-ENFORCE] Aplicar remediaciones de Compliance Operator"
   kubernetes.core.k8s:
@@ -24,6 +26,8 @@
     remediation_name | trim | upper == 'ALL' or 
     remediation_name | trim == '' or 
     item.metadata.name in (remediation_name.replace('\n',',').split(',') | map('trim') | list)
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: "[REMEDY-ENFORCE] Pausa de sincronización"
   ansible.builtin.pause:
@@ -36,6 +40,8 @@
     namespace: openshift-compliance
     kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: rem_res
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: "[REMEDY-INFORM] Formatear reporte de remediaciones detectadas"
   ansible.builtin.set_fact:

@@ -8,6 +8,8 @@
     name: stackrox
     kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: ns_stackrox
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
 
 - name: Chequear Deployment del Sensor en stackrox
   kubernetes.core.k8s_info:
@@ -18,6 +20,8 @@
     kubeconfig: "{{ dynamic_kubeconfig_path | default(omit) }}"
   register: sensor_deploy
   when: ns_stackrox.resources | length > 0
+  environment:
+    KUBECONFIG: "{{ dynamic_kubeconfig_path }}"
   
 - name: Evaluar cumplimiento de la política
   ansible.builtin.set_fact:
