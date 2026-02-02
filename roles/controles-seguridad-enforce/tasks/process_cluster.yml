@@ -1,21 +1,20 @@
 ---
 # -------------------------------------------------------------------------
-# MÉTODO ORCHESTRATOR: Extracción robusta usando el entorno nativo de AAP
+# EXTRACCIÓN DE KUBECONFIG (Modelo Orchestrator - AAP Native)
 # -------------------------------------------------------------------------
-
-- name: "[INIT] Extraer admin-kubeconfig del Hub (Estilo Orchestrator)"
+- name: "[INIT] Extraer admin-kubeconfig del Hub"
   ansible.builtin.shell: |
     oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}' 2>&1 | base64 -d || echo ""
   register: kubeconfig_from_hub
   delegate_to: localhost
   changed_when: false
-  # CRÍTICO: Esto asegura que 'oc' vea la credencial del Hub que tiene el AAP
   environment:
+    # Clave del éxito: Usar la credencial inyectada en el entorno local
     KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') }}"
 
-- name: "[INIT] Validar extracción del secreto"
+- name: "[INIT] Validar extracción"
   ansible.builtin.fail:
-    msg: "FATAL: No se pudo recuperar el kubeconfig para '{{ target_cluster_name }}'. El comando retornó vacío o falló."
+    msg: "FATAL: No se pudo obtener el kubeconfig para '{{ target_cluster_name }}'. Verifique el nombre del cluster y acceso al Hub."
   when: kubeconfig_from_hub.stdout | length < 100
 
 - name: "[INIT] Guardar Kubeconfig temporal para el Spoke"

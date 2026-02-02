@@ -3,6 +3,7 @@
 # Acepta: lista (multi-select en Survey), texto con saltos de línea o comas.
 - name: Controles de seguridad - Enforce
   hosts: localhost
+  connection: local
   gather_facts: true
   vars:
     target_clusters_list: "{{ ((survey_target_clusters | replace(',', '\n')).split('\n') | map('trim') | reject('equalto', '') | list) if (survey_target_clusters is defined and survey_target_clusters is string) else (survey_target_clusters if survey_target_clusters is defined else []) }}"
