@@ -163,5 +163,9 @@ Si no usas Survey, pasa los clusters por **Extra Variables** del Job Template:
 2. **Credencial HUB ACM:** vinculada a los Job Templates de Enforce e Inform.
 3. **Credencial Git:** en el Proyecto, si el código se clona desde Git.
 4. **Playbook:** `enforce.yaml` o `inform.yaml`; `hosts: localhost` ya está en el playbook.
+5. **Reportes en el repo:** Si defines las variables GitLab (`git_workdir`, `gitlab_repo_url`, `gitlab_token`, etc.), los reportes se suben a:
+   - **Inform:** `reportes_controles_seguridad/<nombre_cluster>/inform/`
+   - **Enforce:** `reportes_controles_seguridad/<nombre_cluster>/enforce/`  
+   Se mantienen los 5 archivos más recientes por carpeta.
 
 Con esto, al lanzar el job se procesarán todos los clusters que indiques en `survey_target_clusters` (o en `target_clusters_list`) en una sola ejecución.
