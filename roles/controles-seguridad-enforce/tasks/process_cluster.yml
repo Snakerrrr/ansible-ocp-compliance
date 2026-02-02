@@ -4,7 +4,6 @@
 # ---------------------------------------------------------
 - name: "[CONN] Obtener kubeconfig del managed cluster desde el Hub (admin-kubeconfig)"
   when: target_cluster_name is defined and target_cluster_name | length > 0
-  delegate_to: localhost
   block:
     - name: Obtener valor base64 del secret admin-kubeconfig (sin decodificar en shell)
       ansible.builtin.command:
@@ -12,6 +11,7 @@
       register: kubeconfig_b64
       changed_when: false
       failed_when: false
+      environment: "{{ {'KUBECONFIG': hub_kubeconfig_path} if (hub_kubeconfig_path is defined and hub_kubeconfig_path | length > 0) else ({'KUBECONFIG': lookup('env', 'KUBECONFIG')} if (lookup('env', 'KUBECONFIG') | length > 0) else {}) }}"
 
     - name: Decodificar kubeconfig en Ansible y guardar en archivo temporal
       ansible.builtin.copy:
@@ -36,19 +36,18 @@
   ansible.builtin.stat:
     path: "/tmp/kubeconfig-{{ target_cluster_name }}"
   register: kubeconfig_file_stat
-  delegate_to: localhost
   when: target_cluster_name is defined and target_cluster_name | length > 0
 
 - name: "[CONN] Mostrar motivo del fallo de extracción (diagnóstico)"
   ansible.builtin.debug:
     msg: |
       Diagnóstico extracción kubeconfig para '{{ target_cluster_name }}':
-      - Comando ejecutado (en controlador): oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}'
-      - Decodificación: filtro b64decode en Ansible (no se usa base64 en shell).
+      - Comando ejecutado: oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}'
+      - KUBECONFIG usado: {{ (hub_kubeconfig_path if (hub_kubeconfig_path is defined and hub_kubeconfig_path | length > 0) else lookup('env', 'KUBECONFIG') | default('(no definido)')) }}
       - Código de salida (rc): {{ kubeconfig_b64.rc | default('N/A') }}
       - Longitud del valor base64 (bytes): {{ (kubeconfig_b64.stdout | default('')) | length }}
       - stderr: {{ (kubeconfig_b64.stderr | default('')) | trim }}
-      Si rc!=0 o stdout corto, el secret puede no tener la clave 'kubeconfig' o el namespace no existe en el Hub.
+      Si rc=1 y "Missing or incomplete configuration", asocie la credencial del HUB ACM al Job Template o defina hub_kubeconfig_path con la ruta al kubeconfig del Hub.
   when:
     - target_cluster_name is defined
     - target_cluster_name | length > 0
@@ -59,10 +58,11 @@
     msg: |
       No se pudo obtener el kubeconfig del cluster '{{ target_cluster_name }}' desde el Hub.
       Verifique:
-      1) Credencial del HUB ACM asociada al Job Template (debe permitir 'oc' contra el Hub).
-      2) El secret admin-kubeconfig existe en el namespace '{{ target_cluster_name }}' en el Hub:
+      1) Credencial del HUB ACM asociada al Job Template (OpenShift/Kubernetes que inyecte KUBECONFIG). Sin ella, 'oc' no tiene kubeconfig.
+      2) Si la credencial no inyecta KUBECONFIG, defina hub_kubeconfig_path (Extra Var o Survey) con la ruta al archivo kubeconfig del Hub.
+      3) El secret admin-kubeconfig existe en el namespace '{{ target_cluster_name }}' en el Hub:
          oc get secret admin-kubeconfig -n {{ target_cluster_name }}
-      3) Los nombres en survey_target_clusters coinciden con los nombres de los namespaces de los managed clusters en el Hub.
+      4) Los nombres en survey_target_clusters coinciden con los namespaces de los managed clusters en el Hub.
   when:
     - target_cluster_name is defined
     - target_cluster_name | length > 0

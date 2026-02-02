@@ -485,11 +485,12 @@ Las tareas se ejecutan condicionalmente basándose en la variable `enforce_list`
 
 El orquestador acepta también `GITLAB_TOKEN` y `GITLAB_USER` desde Environment Variables (inyección desde credencial en AAP).
 
-### Variables de Multi-Cluster
+### Variables de Multi-Cluster / Conexión Hub
 
 | Variable | Tipo | Descripción | Default |
 |----------|------|-------------|---------|
 | `survey_target_clusters` | string/list | Lista de clusters a procesar | - |
+| `hub_kubeconfig_path` | string | Ruta al archivo kubeconfig del Hub (opcional). Si no se define, se usa la variable de entorno `KUBECONFIG` inyectada por la credencial OpenShift/Kubernetes en AAP. Útil cuando la credencial no inyecta KUBECONFIG en el job. | `""` |
 
 ### Variables de Controles de Seguridad - Inform
 
@@ -534,7 +535,10 @@ El orquestador acepta también `GITLAB_TOKEN` y `GITLAB_USER` desde Environment 
 
 ### Error: "Faltan variables de Git" (Hub-to-Spoke)
 
-**Solución**: Los roles Inform y Enforce necesitan credencial del **Hub ACM** (OpenShift/Kubernetes) en AAP para ejecutar `oc get secret admin-kubeconfig -n <cluster>`. Asocia la credencial del Hub al Job Template. La variable `survey_target_clusters` (o `target_clusters_list`) debe contener los nombres de los clusters (namespaces en el Hub).
+**Solución**: Los roles Inform y Enforce ejecutan `oc get secret admin-kubeconfig -n <cluster>` contra el Hub. Necesitan que `oc` tenga kubeconfig:
+1. **Recomendado**: Asocia la credencial del **Hub ACM** (OpenShift/Kubernetes) al Job Template y asegúrate de que **inyecte KUBECONFIG** en el job (tipo credencial que escribe el kubeconfig y define la variable de entorno).
+2. Si en tu AAP la credencial no inyecta KUBECONFIG, define la variable **`hub_kubeconfig_path`** (Extra Var o Survey) con la ruta al archivo kubeconfig del Hub (p. ej. la ruta donde AAP escribe el kubeconfig de la credencial).
+3. La variable `survey_target_clusters` (o `target_clusters_list`) debe contener los nombres de los clusters (namespaces en el Hub).
 
 ### No se encuentran PVCs en los clusters
 
