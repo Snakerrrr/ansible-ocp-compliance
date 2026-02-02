@@ -207,10 +207,23 @@
         - all_zip_files is defined
         - all_zip_files.files | length > 0
 
-    - name: Copiar reportes ZIP al repositorio clonado
+    - name: Crear directorio por cluster dentro de reports (reports/<nombre-cluster>/)
+      ansible.builtin.file:
+        path: "{{ git_workdir }}/reports/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ clusters_with_reports | default([]) }}"
+      when:
+        - do_push_gitlab | bool
+        - all_zip_files is defined
+        - all_zip_files.files | length > 0
+        - clusters_with_reports is defined
+        - clusters_with_reports | length > 0
+
+    - name: Copiar reportes ZIP al repositorio clonado (reports/<nombre-cluster>/archivo.zip)
       ansible.builtin.copy:
         src: "{{ item.path }}"
-        dest: "{{ git_workdir }}/reports/{{ item.path | basename }}"
+        dest: "{{ git_workdir }}/reports/{{ item.path | dirname | basename }}/{{ item.path | basename }}"
         remote_src: true
         mode: "0644"
       loop: "{{ all_zip_files.files }}"

@@ -14,7 +14,7 @@ Este proyecto automatiza la gestión de compliance en entornos OpenShift multi-c
   - **Inform**: Revisión y reporte de controles de seguridad (kubeadmin, logs, ingress, LDAP, ACS, network policies, OAuth, remediaciones)
   - **Enforce**: Aplicación automática de remediaciones y configuración de controles (OAuth timeouts, ComplianceRemediations)
 - **Multi-cluster**: Soporte para ejecución en múltiples clusters gestionados desde un Hub
-- **Entrega de Reportes**: Push de reportes a GitLab (orquestador: ZIPs en `reports/`; Inform/Enforce: reportes TXT en `reportes_controles_seguridad/<nombre_cluster>/inform/` o `.../enforce/`, reteniendo los 5 más recientes por carpeta)
+- **Entrega de Reportes**: Push de reportes a GitLab (orquestador: ZIPs en `reports/<nombre_cluster>/`; Inform/Enforce: reportes TXT en `reportes_controles_seguridad/<nombre_cluster>/inform/` o `.../enforce/`, reteniendo los 5 más recientes por carpeta)
 - **Conexión Hub-to-Spoke**: Los roles extraen el kubeconfig del managed cluster desde el Hub con `kubernetes.core.k8s_info` (secret `admin-kubeconfig`) y fuerzan el uso de ese kubeconfig en todas las tareas (anulando K8S_AUTH_* del Job) para consultar el spoke, no el Hub
 - **100% Agnóstico**: Sin valores hardcodeados, todas las variables se inyectan desde AAP
 - **Mejores Prácticas**: Todos los módulos de Ansible utilizan FQDN (Fully Qualified Domain Names) para mayor claridad y compatibilidad
@@ -278,7 +278,7 @@ flowchart TD
     CheckGitLab -->|No| Summary
     FindZips --> BuildList[Construir Lista<br/>de Clusters Procesados]
     BuildList --> CloneRepo[Clonar Repo GitLab<br/>con OAuth2]
-    CloneRepo --> CopyReports[Copiar ZIPs a repo<br/>reports/]
+    CloneRepo --> CopyReports[Copiar ZIPs a repo<br/>reports/&lt;cluster&gt;/]
     CopyReports --> GitCommit[Git add, commit, push]
     GitCommit --> Summary
     
@@ -298,7 +298,7 @@ flowchart TD
 3. **Normalización de Datos**: Convierte la lista de clusters (`survey_target_clusters`) en formato estándar
 4. **Fase GitOps** (opcional): Actualiza políticas de compliance en el repositorio GitOps
 5. **Fase Extracción** (opcional): Por cada cluster, extrae reportes desde PVCs y genera HTML/ZIP
-6. **Push a GitLab** (opcional): Clona el repo GitLab, copia los ZIPs a `reports/`, commit y push
+6. **Push a GitLab** (opcional): Clona el repo GitLab, copia los ZIPs a `reports/<nombre_cluster>/`, commit y push
 7. **Resumen Final**: Muestra la ubicación de los reportes generados y el resultado del push
 
 ## Características Principales
@@ -343,13 +343,13 @@ El playbook `orchestrator_aap_multicluster.yml` procesa múltiples clusters en u
 
 - Procesa todos los clusters especificados en `survey_target_clusters` (texto, uno por línea, o multi-select en AAP)
 - Genera reportes individuales por cluster
-- Sube los ZIPs al repositorio GitLab en la ruta `reports/` (si `do_push_gitlab=true`)
+- Sube los ZIPs al repositorio GitLab en la ruta `reports/<nombre_cluster>/` (si `do_push_gitlab=true`)
 
 Los playbooks `inform.yaml` y `enforce.yaml` también iteran sobre la lista de clusters: reciben `survey_target_clusters` (o `target_clusters_list`), y el rol ejecuta la lógica Hub-to-Spoke y las tareas por cada cluster. Los reportes se suben a GitLab en `reportes_controles_seguridad/<nombre_cluster>/inform/` o `.../enforce/` según el playbook.
 
 ### Entrega de Reportes (GitLab)
 
-- **Orquestador**: Push de ZIPs de compliance (HTML + summary) al repo GitLab en `reports/` tras la exportación.
+- **Orquestador**: Push de ZIPs de compliance (HTML + summary) al repo GitLab en `reports/<nombre_cluster>/` (un archivo ZIP por cluster) tras la exportación.
 - **Inform/Enforce**: Push de reportes TXT al repo GitLab con la siguiente **nomenclatura de carpetas**:
   - `reportes_controles_seguridad/<nombre_cluster>/inform/` → reportes del playbook Inform
   - `reportes_controles_seguridad/<nombre_cluster>/enforce/` → reportes del playbook Enforce  
@@ -592,7 +592,7 @@ Recomendaciones para el cliente a partir del flujo actual de los playbooks, las 
 
 - **Muchos clusters**: Los playbooks iteran por cluster en **secuencia**. Si el número de clusters crece mucho, valorar ejecutar varios Job Templates en paralelo (p. ej. particionando la lista de clusters) o revisar opciones de AAP para paralelismo.
 - **Retención de reportes**: La retención de **5 archivos** por carpeta (`inform/`, `enforce/` por cluster) está fija en el código. Si se necesita más o menos historial, conviene parametrizarlo como variable (p. ej. `report_retention_count`) en los roles.
-- **Tamaño del repo GitLab**: Si se acumulan muchos ZIPs en `reports/` (orquestador) o muchos TXT en `reportes_controles_seguridad/`, definir una política de archivado o limpieza (p. ej. borrar o mover reportes antiguos) para no inflar el repo.
+- **Tamaño del repo GitLab**: Si se acumulan muchos ZIPs en `reports/<cluster>/` (orquestador) o muchos TXT en `reportes_controles_seguridad/`, definir una política de archivado o limpieza (p. ej. borrar o mover reportes antiguos) para no inflar el repo.
 
 ### Operación y mantenimiento
 

@@ -69,7 +69,7 @@ Crear en el **Job Template** (Extra Variables o Survey) las siguientes variables
 1. Eliminar variables y Surveys de SMTP/correo.
 2. Añadir variables y Surveys de GitLab (`do_push_gitlab`, `gitlab_repo_url`, `gitlab_user`, `git_workdir`, etc.).
 3. Quitar credencial de Correo del Job Template; asociar credencial que aporte `gitlab_token` (o inyecte `GITLAB_TOKEN` / `GITLAB_USER`).
-4. Probar el Job Template con `do_push_gitlab=true` y revisar que los reportes aparezcan en el repo en la ruta `reports/`.
+4. Probar el Job Template con `do_push_gitlab=true` y revisar que los reportes aparezcan en el repo en la ruta `reports/<nombre_cluster>/`.
 
 ---
 
