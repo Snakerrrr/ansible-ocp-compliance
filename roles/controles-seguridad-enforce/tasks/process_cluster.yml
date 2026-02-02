@@ -6,30 +6,30 @@
   when: target_cluster_name is defined and target_cluster_name | length > 0
   delegate_to: localhost
   block:
-    - name: Extraer secret admin-kubeconfig del namespace del spoke en el Hub
-      ansible.builtin.shell: |
-        oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}' 2>&1 | base64 -d || echo ""
-      register: kubeconfig_from_hub
+    - name: Obtener valor base64 del secret admin-kubeconfig (sin decodificar en shell)
+      ansible.builtin.command:
+        cmd: oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}'
+      register: kubeconfig_b64
       changed_when: false
       failed_when: false
 
-    - name: Guardar kubeconfig a archivo temporal
+    - name: Decodificar kubeconfig en Ansible y guardar en archivo temporal
       ansible.builtin.copy:
-        content: "{{ kubeconfig_from_hub.stdout }}"
+        content: "{{ kubeconfig_b64.stdout | b64decode }}"
         dest: "/tmp/kubeconfig-{{ target_cluster_name }}"
         mode: '0600'
       when:
-        - kubeconfig_from_hub.stdout is defined
-        - kubeconfig_from_hub.stdout != ''
-        - kubeconfig_from_hub.stdout | length > 100
+        - kubeconfig_b64.rc == 0
+        - kubeconfig_b64.stdout is defined
+        - kubeconfig_b64.stdout | length > 100
 
     - name: Establecer ruta del kubeconfig dinámico
       ansible.builtin.set_fact:
         dynamic_kubeconfig_path: "/tmp/kubeconfig-{{ target_cluster_name }}"
       when:
-        - kubeconfig_from_hub.stdout is defined
-        - kubeconfig_from_hub.stdout != ''
-        - kubeconfig_from_hub.stdout | length > 100
+        - kubeconfig_b64.rc == 0
+        - kubeconfig_b64.stdout is defined
+        - kubeconfig_b64.stdout | length > 100
 
 # Verificar que el kubeconfig existe en el controlador y exponer la ruta al host que ejecuta las tareas
 - name: "[CONN] Verificar que el kubeconfig del spoke existe en el controlador"
@@ -43,11 +43,12 @@
   ansible.builtin.debug:
     msg: |
       Diagnóstico extracción kubeconfig para '{{ target_cluster_name }}':
-      - Comando ejecutado (en controlador): oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}' | base64 -d
-      - Código de salida (rc): {{ kubeconfig_from_hub.rc | default('N/A') }}
-      - Longitud de stdout (bytes): {{ (kubeconfig_from_hub.stdout | default('')) | length }}
-      - stderr (mensaje de error): {{ (kubeconfig_from_hub.stderr | default('')) | trim }}
-      Si stderr está vacío y rc=0 pero stdout corto, el secret puede no tener la clave 'kubeconfig' o el namespace no existe en el Hub.
+      - Comando ejecutado (en controlador): oc get secret admin-kubeconfig -n {{ target_cluster_name }} -o jsonpath='{.data.kubeconfig}'
+      - Decodificación: filtro b64decode en Ansible (no se usa base64 en shell).
+      - Código de salida (rc): {{ kubeconfig_b64.rc | default('N/A') }}
+      - Longitud del valor base64 (bytes): {{ (kubeconfig_b64.stdout | default('')) | length }}
+      - stderr: {{ (kubeconfig_b64.stderr | default('')) | trim }}
+      Si rc!=0 o stdout corto, el secret puede no tener la clave 'kubeconfig' o el namespace no existe en el Hub.
   when:
     - target_cluster_name is defined
     - target_cluster_name | length > 0
